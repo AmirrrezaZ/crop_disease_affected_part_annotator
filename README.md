@@ -1,34 +1,58 @@
-# crop_disease affected-part annotator (deployed)
+# Crop Disease — Affected-Part Annotator
 
-Deployed version of `crop_disease/version1`'s organ-annotation Streamlit
-app: browse and correct per-image organ predictions (leaf/stem/fruit/
-flower/root/seed_grain/whole_plant) from any device, any time — not tied
-to whether the local machine is on.
+A small web app for correcting **which plant organ** (leaf, stem, fruit,
+flower, root, seed/grain, or whole plant) appears in each image of a
+plant-disease photo dataset.
 
-Everything lives in **one Supabase project**:
-- **Images**: Supabase Storage (a public bucket), downscaled to ~384px on
-  upload — this app is for organ identification, not symptom diagnosis, so
-  a thumbnail is plenty, and it keeps the whole 22.7k-image dataset at
-  ~0.48GB, comfortably inside the 1GB free-tier storage cap.
-- **Annotations**: a Postgres table in the same project, instead of a
-  local CSV, so progress is shared across devices.
-- **Layout**: tuned for phone-width viewports (2-column gallery by
-  default, full-width buttons, auto-saves on label change); still usable
-  on desktop.
+## Why this exists
 
-`data/organ_predictions.csv` and `data/class_attributes.csv` are small
-metadata files and are committed directly — only the actual images go
-through Supabase Storage.
+It's a supporting tool for a larger multimodal crop-disease diagnosis
+project. That project's vision model is trained per-disease-class on
+symptom attributes — including *affected_part* — but the images
+themselves were never labeled with which plant organ they actually show.
+A separate lightweight image classifier (CLIP embeddings + a small MLP
+head) predicts an organ for every image, but like any model it's
+imperfect, and its errors are exactly the images most likely to be
+mislabeled in the source dataset.
 
-**Free-tier caveat**: an unused Supabase free project pauses after a week
-of inactivity (data isn't lost, just needs a click to resume from the
-dashboard before the app works again). Fine for occasional annotation
-sessions; if you want it truly always-on with zero manual steps, that's
-what the $25/mo Pro plan removes.
+This app closes that loop: it shows the model's prediction next to each
+image, a human confirms or corrects it, and those corrections both (a)
+fix the disease dataset's labels and (b) become new training data to
+recalibrate the organ classifier itself.
 
-## One-time setup (~10 minutes)
+## How it works
 
-### 1. Create the Supabase project
+- **Gallery mode** — a grid of thumbnails for a chosen predicted organ
+  (e.g. "show me everything predicted `root`"), optionally filtered to
+  one disease class or to low-confidence predictions. Pick the right
+  label from the dropdown under an image and it saves immediately — no
+  extra click — and drops out of the grid once reviewed.
+- **Review mode** — one image at a time, for working through a specific
+  queue (e.g. every class where the model's majority prediction disagrees
+  with that class's documented affected part).
+- Every correction is written to a shared database immediately, so
+  progress is the same whether you're on a laptop or a phone, and
+  multiple sessions never clobber each other.
+
+## Stack
+
+- **UI**: [Streamlit](https://streamlit.io), deployed on Streamlit
+  Community Cloud — free, always-on, no server to manage.
+- **Images**: Supabase Storage, downscaled to ~384px on upload (organ
+  identification doesn't need full resolution, and it keeps the full
+  ~22.7k-image dataset under 0.5GB).
+- **Annotations**: a Postgres table (Supabase), so corrections persist
+  centrally instead of in a local CSV.
+
+`data/organ_predictions.csv` and `data/class_attributes.csv` are the only
+things committed to this repo (small metadata, a few MB) — the actual
+images live in object storage, not in git.
+
+---
+
+## Deploying your own copy
+
+### 1. Create a Supabase project
 
 [supabase.com](https://supabase.com) → **New project**.
 
@@ -47,44 +71,38 @@ what the $25/mo Pro plan removes.
 
 ### 3. Storage (images)
 
-1. Project → **Storage** → **New bucket** (e.g. `crop-disease-images`) →
-   toggle **Public bucket**.
+1. Project → **Storage** → **New bucket** → toggle **Public bucket**.
 2. Project → **Settings** → **Storage** → **S3 Connection** → **New
    access key**. Note the endpoint URL, region, access key ID, and secret.
 3. Upload the dataset (run locally, where the full-res images already are
    — this resizes them on the way up):
    ```bash
-   SUPABASE_S3_ENDPOINT=https://<project-ref>.supabase.co/storage/v1/s3 \
+   SUPABASE_S3_ENDPOINT=https://<project-ref>.storage.supabase.co/storage/v1/s3 \
    SUPABASE_S3_REGION=<region-from-that-page> \
    SUPABASE_S3_ACCESS_KEY_ID=... \
    SUPABASE_S3_SECRET_ACCESS_KEY=... \
-   SUPABASE_BUCKET=crop-disease-images \
+   SUPABASE_BUCKET=<your-bucket-name> \
      python scripts/upload_images.py
    ```
    Uploads ~22.7k resized images with 12 parallel workers; skips files
    already present, so it's safe to re-run if interrupted. Add
-   `--max-dim 512` if you want sharper thumbnails and don't mind using
-   closer to the full 1GB (~0.81GB at 512px).
+   `--max-dim 512` for sharper thumbnails (~0.81GB instead of ~0.48GB).
 4. `IMAGE_PUBLIC_BASE` is:
-   `https://<project-ref>.supabase.co/storage/v1/object/public/crop-disease-images`
+   `https://<project-ref>.supabase.co/storage/v1/object/public/<your-bucket-name>`
 
 ### 4. Streamlit Community Cloud (hosting)
 
-1. Push this repo to GitHub (already done if you're reading this from
-   there).
+1. Push this repo to GitHub.
 2. [share.streamlit.io](https://share.streamlit.io) → **New app** → pick
    this repo, branch `main`, main file `app.py`.
-3. App **Settings** → **Secrets** → paste:
-   ```toml
-   DB_URL = "postgresql://...pooler.supabase.com:6543/postgres"
-   IMAGE_PUBLIC_BASE = "https://xxxxxxxxxxxx.supabase.co/storage/v1/object/public/crop-disease-images"
-   ```
+3. App **Settings** → **Secrets** → paste `DB_URL` and `IMAGE_PUBLIC_BASE`
    (see `.streamlit/secrets.toml.example`).
-4. Deploy. The app is now live at `https://<your-app>.streamlit.app`,
-   works from a phone browser, and stays up regardless of whether this
-   machine is on (mod the free-tier pause note above).
+4. Deploy. Live at `https://<your-app>.streamlit.app`.
 
-## Local testing against the real DB/bucket
+**Free-tier note**: an unused Supabase free project pauses after a week
+of inactivity (no data loss, just needs a dashboard click to resume).
+
+### Local testing against the real DB/bucket
 
 ```bash
 pip install -r requirements.txt
@@ -92,12 +110,11 @@ cp .streamlit/secrets.toml.example .streamlit/secrets.toml   # fill in your valu
 streamlit run app.py
 ```
 
-## Syncing corrections back to the main project
+### Syncing corrections back to the main project
 
-The Supabase `organ_review` table is now the source of truth for
-annotations. To pull it back into `crop_disease/version1/data/organ_review.csv`
-for retraining `plant_organ` (see that project's `scripts/build_manifest.py`,
-`AFFECTED_PART_TO_ORGAN`), export the table:
+The Supabase `organ_review` table is the source of truth for annotations.
+To pull it back into the original project's `data/organ_review.csv` for
+retraining the organ classifier:
 
 ```bash
 psql "$DB_URL" -c "\copy organ_review TO 'organ_review.csv' WITH CSV HEADER"

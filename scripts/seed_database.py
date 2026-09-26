@@ -20,7 +20,8 @@ import sys
 from pathlib import Path
 
 import pandas as pd
-from sqlalchemy import create_engine, text
+import psycopg2
+from psycopg2.extras import execute_values
 
 ROOT = Path(__file__).resolve().parents[1]
 PREDICTIONS = ROOT / "data" / "organ_predictions.csv"
@@ -58,27 +59,42 @@ def main():
                         "confidence": r.confidence, "final_label": r.pred_affected_part,
                         "reviewed": False, "reviewed_at": None})
 
-    engine = create_engine(db_url)
-    with engine.begin() as conn:
-        conn.execute(text("""
-            create table if not exists organ_review (
-                path text primary key, class text not null, pred_organ text,
-                confidence text, final_label text, reviewed boolean not null default false,
-                reviewed_at timestamptz
-            )
-        """))
+    # Raw psycopg2 + execute_values for true multi-row round trips (SQLAlchemy's
+    # default executemany over a list of dicts issues one round trip PER ROW,
+    # which against a pooled connection is minutes-to-hours slower for 22k+ rows).
+    # Commit per batch, not one giant transaction, so progress is visible and
+    # a Ctrl-C / crash mid-run doesn't lose everything already upserted.
+    conn = psycopg2.connect(db_url)
+    conn.autocommit = False
+    try:
+        with conn.cursor() as cur:
+            cur.execute("""
+                create table if not exists organ_review (
+                    path text primary key, class text not null, pred_organ text,
+                    confidence text, final_label text, reviewed boolean not null default false,
+                    reviewed_at timestamptz
+                )
+            """)
+        conn.commit()
+
         batch = 2000
+        cols = ["path", "class", "pred_organ", "confidence", "final_label", "reviewed", "reviewed_at"]
         for i in range(0, len(rows), batch):
             chunk = rows[i:i + batch]
-            conn.execute(text("""
-                insert into organ_review (path, class, pred_organ, confidence, final_label, reviewed, reviewed_at)
-                values (:path, :class, :pred_organ, :confidence, :final_label, :reviewed, :reviewed_at)
-                on conflict (path) do update set
-                    final_label = excluded.final_label,
-                    reviewed = excluded.reviewed,
-                    reviewed_at = excluded.reviewed_at
-            """), chunk)
-            print(f"upserted {min(i + batch, len(rows))}/{len(rows)}")
+            values = [tuple(r[c] for c in cols) for r in chunk]
+            with conn.cursor() as cur:
+                execute_values(cur, """
+                    insert into organ_review (path, class, pred_organ, confidence, final_label, reviewed, reviewed_at)
+                    values %s
+                    on conflict (path) do update set
+                        final_label = excluded.final_label,
+                        reviewed = excluded.reviewed,
+                        reviewed_at = excluded.reviewed_at
+                """, values)
+            conn.commit()
+            print(f"upserted {min(i + batch, len(rows))}/{len(rows)}", flush=True)
+    finally:
+        conn.close()
 
     n_reviewed = sum(1 for r in rows if r["reviewed"])
     print(f"done: {len(rows)} rows total, {n_reviewed} carried over as already-reviewed")

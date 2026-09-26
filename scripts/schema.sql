@@ -12,3 +12,9 @@ create table if not exists organ_review (
 
 create index if not exists organ_review_reviewed_idx on organ_review (reviewed);
 create index if not exists organ_review_class_idx on organ_review (class);
+
+-- The app connects with the postgres/pooler credential (table owner), which
+-- always bypasses RLS -- this only blocks the separate public PostgREST API
+-- Supabase auto-generates for every table, which the app never uses. With
+-- RLS on and no policies, that API surface has zero access.
+alter table organ_review enable row level security;
