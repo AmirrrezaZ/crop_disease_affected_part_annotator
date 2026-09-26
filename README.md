@@ -5,65 +5,84 @@ app: browse and correct per-image organ predictions (leaf/stem/fruit/
 flower/root/seed_grain/whole_plant) from any device, any time — not tied
 to whether the local machine is on.
 
-- **Images**: served from a Cloudflare R2 bucket instead of local disk.
-- **Annotations**: read/written to a Supabase Postgres table instead of a
+Everything lives in **one Supabase project**:
+- **Images**: Supabase Storage (a public bucket), downscaled to ~384px on
+  upload — this app is for organ identification, not symptom diagnosis, so
+  a thumbnail is plenty, and it keeps the whole 22.7k-image dataset at
+  ~0.48GB, comfortably inside the 1GB free-tier storage cap.
+- **Annotations**: a Postgres table in the same project, instead of a
   local CSV, so progress is shared across devices.
 - **Layout**: tuned for phone-width viewports (2-column gallery by
-  default, full-width buttons); still usable on desktop.
+  default, full-width buttons, auto-saves on label change); still usable
+  on desktop.
 
 `data/organ_predictions.csv` and `data/class_attributes.csv` are small
-metadata files and are committed directly — only the actual images (4.2GB)
-go through R2.
+metadata files and are committed directly — only the actual images go
+through Supabase Storage.
 
-## One-time setup (~15 minutes)
+**Free-tier caveat**: an unused Supabase free project pauses after a week
+of inactivity (data isn't lost, just needs a click to resume from the
+dashboard before the app works again). Fine for occasional annotation
+sessions; if you want it truly always-on with zero manual steps, that's
+what the $25/mo Pro plan removes.
 
-### 1. Cloudflare R2 (image hosting, free up to 10GB)
+## One-time setup (~10 minutes)
 
-1. Cloudflare dashboard → R2 → **Create bucket** (any name, e.g.
-   `crop-disease-images`).
-2. Bucket → **Settings** → **Public access** → enable the `r2.dev`
-   subdomain (or attach a custom domain). Copy that public URL — this is
-   `R2_PUBLIC_BASE`.
-3. R2 → **Manage API tokens** → create a token with **Object Read & Write**
-   permission on this bucket. Note the **Account ID**, **Access Key ID**,
-   and **Secret Access Key**.
-4. Upload the dataset (run locally, where the images already are):
-   ```bash
-   pip install -r scripts/requirements-migration.txt
-   R2_ACCOUNT_ID=... R2_ACCESS_KEY_ID=... R2_SECRET_ACCESS_KEY=... R2_BUCKET=crop-disease-images \
-     python scripts/upload_images_to_r2.py
-   ```
-   Uploads ~22.7k files (4.2GB) with 16 parallel workers; skips files
-   already present, so it's safe to re-run if interrupted.
+### 1. Create the Supabase project
 
-### 2. Supabase (annotation database, free tier)
+[supabase.com](https://supabase.com) → **New project**.
 
-1. [supabase.com](https://supabase.com) → **New project**.
-2. Project → **SQL Editor** → paste and run `scripts/schema.sql`.
-3. Project → **Settings** → **Database** → **Connection string** → **URI**
+### 2. Database (annotation storage)
+
+1. Project → **SQL Editor** → paste and run `scripts/schema.sql`.
+2. Project → **Settings** → **Database** → **Connection string** → **URI**
    tab → copy the **Transaction pooler** string (port 6543). This is
    `DB_URL`. Replace `[YOUR-PASSWORD]` with your project's DB password.
-4. Seed it with the current predictions (and carry over any existing
+3. Seed it with the current predictions (and carry over any existing
    human reviews from the original local `organ_review.csv`):
    ```bash
+   pip install -r scripts/requirements-migration.txt
    DB_URL="postgresql://..." python scripts/seed_database.py
    ```
 
-### 3. Streamlit Community Cloud (hosting)
+### 3. Storage (images)
+
+1. Project → **Storage** → **New bucket** (e.g. `crop-disease-images`) →
+   toggle **Public bucket**.
+2. Project → **Settings** → **Storage** → **S3 Connection** → **New
+   access key**. Note the endpoint URL, region, access key ID, and secret.
+3. Upload the dataset (run locally, where the full-res images already are
+   — this resizes them on the way up):
+   ```bash
+   SUPABASE_S3_ENDPOINT=https://<project-ref>.supabase.co/storage/v1/s3 \
+   SUPABASE_S3_REGION=<region-from-that-page> \
+   SUPABASE_S3_ACCESS_KEY_ID=... \
+   SUPABASE_S3_SECRET_ACCESS_KEY=... \
+   SUPABASE_BUCKET=crop-disease-images \
+     python scripts/upload_images.py
+   ```
+   Uploads ~22.7k resized images with 12 parallel workers; skips files
+   already present, so it's safe to re-run if interrupted. Add
+   `--max-dim 512` if you want sharper thumbnails and don't mind using
+   closer to the full 1GB (~0.81GB at 512px).
+4. `IMAGE_PUBLIC_BASE` is:
+   `https://<project-ref>.supabase.co/storage/v1/object/public/crop-disease-images`
+
+### 4. Streamlit Community Cloud (hosting)
 
 1. Push this repo to GitHub (already done if you're reading this from
    there).
 2. [share.streamlit.io](https://share.streamlit.io) → **New app** → pick
    this repo, branch `main`, main file `app.py`.
-3. Before or after first deploy: app **Settings** → **Secrets** → paste:
+3. App **Settings** → **Secrets** → paste:
    ```toml
    DB_URL = "postgresql://...pooler.supabase.com:6543/postgres"
-   R2_PUBLIC_BASE = "https://pub-xxxxxxxxxxxxxxxx.r2.dev"
+   IMAGE_PUBLIC_BASE = "https://xxxxxxxxxxxx.supabase.co/storage/v1/object/public/crop-disease-images"
    ```
    (see `.streamlit/secrets.toml.example`).
 4. Deploy. The app is now live at `https://<your-app>.streamlit.app`,
    works from a phone browser, and stays up regardless of whether this
-   machine is on.
+   machine is on (mod the free-tier pause note above).
 
 ## Local testing against the real DB/bucket
 

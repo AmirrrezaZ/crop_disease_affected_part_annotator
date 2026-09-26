@@ -3,8 +3,8 @@ and correct the per-image organ predictions from plant_organ's CLIP+MLP
 head (data/organ_predictions.csv), from any device, any time.
 
 Differences from the local version this was adapted from:
-  - Images are served from a Cloudflare R2 bucket (st.secrets["R2_PUBLIC_BASE"])
-    instead of local disk -- the same relative path used as the R2 object key.
+  - Images are served from a Supabase Storage bucket (st.secrets["IMAGE_PUBLIC_BASE"])
+    instead of local disk -- the same relative path used as the storage object key.
   - Annotations are read/written to a Postgres database (Supabase, via
     st.secrets["DB_URL"]) instead of a local CSV, so progress is shared
     across every device and survives this machine being off.
@@ -14,7 +14,7 @@ Differences from the local version this was adapted from:
 Run locally against the same DB/bucket for testing:
   streamlit run app.py
 Deployed: pushed to GitHub, connected at share.streamlit.io, with
-R2_PUBLIC_BASE and DB_URL set in that app's Secrets. See README.md.
+IMAGE_PUBLIC_BASE and DB_URL set in that app's Secrets. See README.md.
 """
 from datetime import datetime, timezone
 from pathlib import Path
@@ -28,7 +28,7 @@ DATA = ROOT / "data"
 PREDICTIONS = DATA / "organ_predictions.csv"
 CLASS_ATTRS = DATA / "class_attributes.csv"
 
-R2_PUBLIC_BASE = st.secrets.get("R2_PUBLIC_BASE", "").rstrip("/")
+IMAGE_PUBLIC_BASE = st.secrets.get("IMAGE_PUBLIC_BASE", "").rstrip("/")
 
 PARTS = ["leaf", "stem", "fruit", "flower", "root", "seed_grain", "whole_plant"]
 LABELS = PARTS + ["not_plant_other"]
@@ -37,7 +37,7 @@ st.set_page_config(page_title="Organ annotation", layout="centered")
 
 
 def image_url(path: str) -> str:
-    return f"{R2_PUBLIC_BASE}/{path}"
+    return f"{IMAGE_PUBLIC_BASE}/{path}"
 
 
 @st.cache_resource
@@ -308,8 +308,8 @@ def review_mode(preds, declared):
 
 
 def main():
-    if not st.secrets.get("R2_PUBLIC_BASE") or not st.secrets.get("DB_URL"):
-        st.error("Missing secrets: set R2_PUBLIC_BASE and DB_URL in this app's Settings → Secrets. "
+    if not st.secrets.get("IMAGE_PUBLIC_BASE") or not st.secrets.get("DB_URL"):
+        st.error("Missing secrets: set IMAGE_PUBLIC_BASE and DB_URL in this app's Settings → Secrets. "
                  "See README.md for how to get them.")
         st.stop()
 
