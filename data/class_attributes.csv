@@ -1,0 +1,152 @@
+class,disease_type,affected_part,color,texture,shape,pattern
+apple black rot,fungal,leaf;fruit,brown;dark_black;tan;red_purple,sunken;dry_necrotic,circular;concentric_target,scattered_spots;halo
+apple leaf,healthy,leaf,,,,
+apple mosaic virus,viral,leaf,yellow;pale_green,,irregular,mosaic_mottle;vein_associated
+apple rust,fungal,leaf;fruit,orange;yellow;red_purple,pustules;raised_corky,circular,scattered_spots;halo
+apple scab,fungal,leaf;fruit,olive;dark_black;brown,fuzzy_moldy;raised_corky,circular;irregular,scattered_spots;coalescing_blotches
+banana anthracnose,fungal,fruit,dark_black;brown;orange,sunken;water_soaked,circular;irregular,scattered_spots;coalescing_blotches
+banana black leaf streak,fungal,leaf,dark_black;brown;yellow,dry_necrotic,elongated,stripes_streaks;coalescing_blotches
+banana bunchy top,viral,leaf;whole_plant,yellow;pale_green;olive,,curled_distorted,stripes_streaks;vein_associated;marginal_tip
+banana cigar end rot,fungal,fruit,dark_black;white_gray;brown,dry_necrotic;fuzzy_moldy,irregular,marginal_tip
+banana cordana leaf spot,fungal,leaf,brown;tan;yellow,dry_necrotic,circular;concentric_target,scattered_spots;halo
+banana leaf,healthy,leaf,,,,
+banana panama disease,fungal,leaf;stem;whole_plant,yellow;brown,dry_necrotic,wilted,marginal_tip;uniform_general
+basil downy mildew,fungal,leaf,yellow;dark_black;white_gray,fuzzy_moldy,angular,interveinal;vein_associated
+basil leaf,healthy,leaf,,,,
+bean halo blight,bacterial,leaf;fruit,yellow;brown;pale_green,water_soaked,circular,halo;scattered_spots
+bean leaf,healthy,leaf,,,,
+bean mosaic virus,viral,leaf,yellow;pale_green,,curled_distorted,mosaic_mottle;vein_associated
+bean rust,fungal,leaf,orange;brown;red_purple,pustules,circular,scattered_spots;halo
+bell pepper bacterial spot,bacterial,leaf;fruit,brown;dark_black;yellow,water_soaked;raised_corky,circular;irregular,scattered_spots;halo
+bell pepper blossom end rot,nutrient_deficiency,fruit,brown;dark_black;tan,sunken;dry_necrotic,circular,marginal_tip
+bell pepper frogeye leaf spot,fungal,leaf,tan;brown;white_gray,dry_necrotic,circular;concentric_target,scattered_spots
+bell pepper leaf,healthy,leaf,,,,
+bell pepper leaf spot,bacterial,leaf,brown;dark_black;yellow,water_soaked;dry_necrotic,circular;irregular,scattered_spots;halo
+bell pepper powdery mildew,fungal,leaf,white_gray;yellow,powdery,irregular,coalescing_blotches
+blueberry anthracnose,fungal,fruit,orange;brown,sunken;sticky_exudate,circular;wilted,scattered_spots
+blueberry botrytis blight,fungal,flower;fruit;stem,brown;white_gray,fuzzy_moldy;dry_necrotic,irregular;wilted,coalescing_blotches;uniform_general
+blueberry leaf,healthy,leaf,,,,
+blueberry mummy berry,fungal,fruit;leaf;stem,white_gray;brown;tan,dry_necrotic,wilted;irregular,uniform_general;vein_associated
+blueberry rust,fungal,leaf,yellow;orange;red_purple;brown,pustules,angular;circular,scattered_spots
+blueberry scorch,viral,flower;leaf,brown;red_purple;dark_black,dry_necrotic,wilted,marginal_tip;uniform_general
+broccoli alternaria leaf spot,fungal,leaf;flower,brown;dark_black;yellow,dry_necrotic,circular;concentric_target,scattered_spots;halo
+broccoli downy mildew,fungal,leaf;flower,yellow;white_gray;brown;dark_black,fuzzy_moldy,angular;irregular,interveinal;coalescing_blotches
+broccoli leaf,healthy,leaf,,,,
+broccoli ring spot,fungal,leaf,brown;white_gray;dark_black;yellow,dry_necrotic,circular;concentric_target,scattered_spots;halo
+cabbage alternaria leaf spot,fungal,leaf,brown;dark_black;yellow,dry_necrotic,circular;concentric_target,scattered_spots;halo
+cabbage black rot,bacterial,leaf,yellow;brown;dark_black,dry_necrotic,angular;irregular,marginal_tip;vein_associated
+cabbage downy mildew,fungal,leaf,yellow;white_gray;brown;red_purple,fuzzy_moldy,angular;irregular,interveinal;scattered_spots
+cabbage leaf,healthy,leaf,,,,
+carrot alternaria leaf blight,fungal,leaf,brown;dark_black;yellow,dry_necrotic,irregular,marginal_tip;coalescing_blotches
+carrot cavity spot,fungal,root,brown;tan;white_gray,sunken,elongated,scattered_spots
+carrot cercospora leaf blight,fungal,leaf;stem,tan;brown;yellow,dry_necrotic,circular;curled_distorted,scattered_spots;halo
+cauliflower alternaria leaf spot,fungal,leaf;flower,brown;dark_black;yellow,dry_necrotic,circular;concentric_target,scattered_spots;halo
+cauliflower bacterial soft rot,bacterial,flower;stem,brown;dark_black;tan,water_soaked,irregular,coalescing_blotches
+cauliflower leaf,healthy,leaf,,,,
+celery anthracnose,fungal,leaf;stem,brown;tan;orange,sunken,curled_distorted;elongated,scattered_spots
+celery early blight,fungal,leaf;stem,yellow;brown;tan;white_gray,dry_necrotic,circular;irregular,scattered_spots;halo
+celery leaf,healthy,leaf,,,,
+cherry leaf,healthy,leaf,,,,
+cherry leaf spot,fungal,leaf,red_purple;brown;yellow,dry_necrotic,circular;holes,scattered_spots
+cherry powdery mildew,fungal,leaf;fruit,white_gray;pale_green,powdery,irregular;curled_distorted,coalescing_blotches
+citrus canker,bacterial,leaf;fruit;stem,brown;tan;yellow,raised_corky,circular,halo;scattered_spots
+citrus greening disease,bacterial,leaf;fruit,yellow;pale_green,,irregular;curled_distorted,mosaic_mottle;vein_associated
+coffee berry blotch,fungal,fruit,brown;dark_black;red_purple,sunken;dry_necrotic,irregular,coalescing_blotches
+coffee black rot,fungal,leaf;fruit;stem,dark_black;brown,water_soaked;fuzzy_moldy,irregular;wilted,coalescing_blotches;uniform_general
+coffee brown eye spot,fungal,leaf;fruit,brown;white_gray;red_purple;yellow,dry_necrotic,circular;concentric_target,scattered_spots;halo
+coffee leaf,healthy,leaf,,,,
+coffee leaf rust,fungal,leaf,orange;yellow,powdery;pustules,circular,scattered_spots;coalescing_blotches
+corn gray leaf spot,fungal,leaf,tan;white_gray;brown,dry_necrotic,angular;elongated,stripes_streaks;vein_associated
+corn leaf,healthy,leaf,,,,
+corn northern leaf blight,fungal,leaf,tan;white_gray;brown,dry_necrotic,elongated,scattered_spots;coalescing_blotches
+corn rust,fungal,leaf,orange;brown;red_purple,pustules;powdery,circular;elongated,scattered_spots
+corn smut,fungal,fruit;flower;stem,white_gray;dark_black,powdery,swollen_galls;irregular,uniform_general
+cucumber angular leaf spot,bacterial,leaf;fruit,yellow;brown;tan,water_soaked;dry_necrotic,angular;holes,scattered_spots;vein_associated;halo
+cucumber bacterial wilt,bacterial,leaf;stem;whole_plant,olive;brown;yellow,dry_necrotic,wilted,uniform_general;marginal_tip
+cucumber leaf,healthy,leaf,,,,
+cucumber powdery mildew,fungal,leaf;stem,white_gray;yellow,powdery,circular;irregular,scattered_spots;coalescing_blotches
+eggplant cercospora leaf spot,fungal,leaf,brown;tan;yellow;white_gray;red_purple,dry_necrotic,circular;angular,scattered_spots;halo
+eggplant leaf,healthy,leaf,,,,
+eggplant phomopsis fruit rot,fungal,fruit;leaf;stem,brown;tan;dark_black,sunken,circular;concentric_target,coalescing_blotches
+eggplant phytophthora blight,fungal,fruit;stem;leaf,brown;dark_black;white_gray,water_soaked;fuzzy_moldy,irregular;wilted,coalescing_blotches
+garlic leaf,healthy,leaf,,,,
+garlic leaf blight,fungal,leaf,yellow;brown;tan;red_purple,dry_necrotic,elongated;irregular,marginal_tip;stripes_streaks
+garlic rust,fungal,leaf,orange;yellow;brown,pustules,circular;elongated,scattered_spots
+ginger leaf,healthy,leaf,,,,
+ginger leaf spot,fungal,leaf,white_gray;brown;yellow,dry_necrotic,circular;elongated,scattered_spots;halo
+ginger sheath blight,fungal,stem;leaf,white_gray;brown;tan,dry_necrotic;water_soaked,irregular;elongated,coalescing_blotches
+grape black rot,fungal,leaf;fruit,brown;tan;dark_black,dry_necrotic,circular;wilted,scattered_spots
+grape downy mildew,fungal,leaf;fruit,yellow;white_gray;brown,fuzzy_moldy;water_soaked,angular;irregular,scattered_spots;vein_associated
+grape leaf,healthy,leaf,,,,
+grape leaf spot,fungal,leaf,brown;dark_black;red_purple,dry_necrotic,irregular;angular,scattered_spots;coalescing_blotches
+grapevine leafroll disease,viral,leaf,red_purple;yellow,,curled_distorted,interveinal;vein_associated
+lettuce downy mildew,fungal,leaf,yellow;pale_green;white_gray;brown,fuzzy_moldy,angular,vein_associated;scattered_spots
+lettuce leaf,healthy,leaf,,,,
+lettuce mosaic virus,viral,leaf;whole_plant,pale_green;yellow,,curled_distorted,mosaic_mottle;vein_associated
+maple leaf,healthy,leaf,,,,
+maple tar spot,fungal,leaf,dark_black;yellow,raised_corky,circular;irregular,scattered_spots;halo
+peach anthracnose,fungal,fruit,brown;orange;tan,sunken,circular;concentric_target,scattered_spots
+peach brown rot,fungal,fruit;flower;stem,brown;tan;white_gray,fuzzy_moldy;water_soaked,circular;concentric_target;wilted,coalescing_blotches;uniform_general
+peach leaf,healthy,leaf,,,,
+peach leaf curl,fungal,leaf,red_purple;yellow;pale_green,raised_corky,curled_distorted,uniform_general
+peach rust,fungal,leaf;fruit,yellow;orange;brown,pustules,angular;circular,scattered_spots
+peach scab,fungal,fruit;leaf,olive;dark_black,fuzzy_moldy;raised_corky,circular,scattered_spots
+plum bacterial spot,bacterial,leaf;fruit,brown;dark_black;red_purple;yellow,water_soaked;sunken,angular;holes,scattered_spots;halo
+plum brown rot,fungal,fruit;flower;stem,brown;tan;white_gray,fuzzy_moldy;water_soaked,circular;concentric_target;wilted,coalescing_blotches;uniform_general
+plum leaf,healthy,leaf,,,,
+plum pocket disease,fungal,fruit,white_gray;pale_green;yellow,powdery,swollen_galls;curled_distorted,uniform_general
+plum pox virus,viral,leaf;fruit,yellow;pale_green,sunken,concentric_target;curled_distorted,mosaic_mottle;vein_associated
+plum rust,fungal,leaf,yellow;orange;brown,pustules;powdery,angular,scattered_spots
+potato early blight,fungal,leaf,brown;dark_black;yellow,dry_necrotic,circular;angular;concentric_target,scattered_spots;halo
+potato late blight,fungal,leaf;stem,brown;dark_black;olive;white_gray,water_soaked;fuzzy_moldy,irregular,coalescing_blotches;marginal_tip
+potato leaf,healthy,leaf,,,,
+raspberry fire blight,bacterial,stem;leaf;flower,brown;dark_black,dry_necrotic;sticky_exudate,wilted;curled_distorted,uniform_general;marginal_tip
+raspberry gray mold,fungal,fruit;flower,white_gray;brown,fuzzy_moldy;water_soaked,irregular,uniform_general;coalescing_blotches
+raspberry leaf,healthy,leaf,,,,
+raspberry leaf spot,fungal,leaf,brown;red_purple;white_gray,dry_necrotic,circular;holes,scattered_spots
+raspberry yellow rust,fungal,leaf,yellow;orange,pustules;powdery,circular,scattered_spots
+rice blast,fungal,leaf;stem,white_gray;brown;tan,dry_necrotic,elongated,scattered_spots
+rice leaf,healthy,leaf,,,,
+rice sheath blight,fungal,stem;leaf,white_gray;brown;tan;olive,dry_necrotic;water_soaked,elongated;irregular,coalescing_blotches
+soybean bacterial blight,bacterial,leaf,brown;dark_black;yellow,water_soaked;dry_necrotic,angular,scattered_spots;halo
+soybean brown spot,fungal,leaf,brown;yellow,dry_necrotic,angular;irregular,scattered_spots;uniform_general
+soybean downy mildew,fungal,leaf,yellow;pale_green;white_gray;brown,fuzzy_moldy,irregular,scattered_spots
+soybean frog eye leaf spot,fungal,leaf,tan;white_gray;red_purple;brown,dry_necrotic,circular;angular,scattered_spots
+soybean leaf,healthy,leaf,,,,
+soybean mosaic,viral,leaf,pale_green;yellow,,curled_distorted,mosaic_mottle
+soybean rust,fungal,leaf,brown;tan;red_purple,pustules,angular;circular,scattered_spots
+squash leaf,healthy,leaf,,,,
+squash powdery mildew,fungal,leaf;stem,white_gray;yellow,powdery,circular;irregular,scattered_spots;coalescing_blotches
+strawberry anthracnose,fungal,fruit;stem,brown;dark_black;orange,sunken,circular,scattered_spots
+strawberry leaf,healthy,leaf,,,,
+strawberry leaf scorch,fungal,leaf,red_purple;brown,dry_necrotic,irregular;circular,scattered_spots;coalescing_blotches
+tobacco blue mold,fungal,leaf,yellow;white_gray;brown,fuzzy_moldy,irregular;curled_distorted,coalescing_blotches;scattered_spots
+tobacco brown spot,fungal,leaf,brown;yellow,dry_necrotic,circular;concentric_target,scattered_spots;halo
+tobacco frogeye leaf spot,fungal,leaf,tan;white_gray;brown,dry_necrotic,circular,scattered_spots
+tobacco leaf,healthy,leaf,,,,
+tobacco mosaic virus,viral,leaf,pale_green;yellow,,curled_distorted,mosaic_mottle
+tomato bacterial leaf spot,bacterial,leaf;fruit,brown;dark_black;yellow,water_soaked;raised_corky,circular;irregular,scattered_spots;halo
+tomato early blight,fungal,leaf;stem;fruit,brown;dark_black;yellow,dry_necrotic,circular;concentric_target,scattered_spots;halo
+tomato late blight,fungal,leaf;stem;fruit,brown;dark_black;olive;white_gray,water_soaked;fuzzy_moldy,irregular,coalescing_blotches
+tomato leaf,healthy,leaf,,,,
+tomato leaf mold,fungal,leaf,yellow;olive;brown;white_gray,fuzzy_moldy,irregular,coalescing_blotches
+tomato mosaic virus,viral,leaf;fruit,pale_green;yellow,,curled_distorted,mosaic_mottle
+tomato septoria leaf spot,fungal,leaf,brown;tan;white_gray;dark_black;yellow,dry_necrotic,circular,scattered_spots;halo
+tomato yellow leaf curl virus,viral,leaf;whole_plant,yellow;pale_green,,curled_distorted,marginal_tip;interveinal
+wheat bacterial leaf streak (black chaff),bacterial,leaf;seed_grain,brown;dark_black;yellow;tan,water_soaked,elongated,stripes_streaks
+wheat head scab,fungal,seed_grain;flower,tan;white_gray;orange,dry_necrotic,irregular,uniform_general
+wheat leaf rust,fungal,leaf,orange;brown,pustules;powdery,circular,scattered_spots
+wheat loose smut,fungal,seed_grain;flower,dark_black;olive,powdery,irregular,uniform_general
+wheat powdery mildew,fungal,leaf;stem,white_gray,powdery,circular;irregular,coalescing_blotches
+wheat septoria blotch,fungal,leaf,brown;tan;yellow;dark_black,dry_necrotic,irregular;elongated,coalescing_blotches
+wheat stem rust,fungal,stem;leaf,red_purple;brown;orange,pustules;powdery,elongated,scattered_spots
+wheat stripe rust,fungal,leaf,yellow;orange,pustules;powdery,elongated,stripes_streaks;vein_associated
+zucchini bacterial wilt,bacterial,leaf;whole_plant,yellow;brown;olive,dry_necrotic,wilted,uniform_general;marginal_tip
+zucchini downy mildew,fungal,leaf,yellow;brown,fuzzy_moldy,angular,scattered_spots;vein_associated
+zucchini powdery mildew,fungal,leaf,white_gray;yellow,powdery,circular,scattered_spots;coalescing_blotches
+zucchini yellow mosaic virus,viral,leaf;fruit,yellow;pale_green,raised_corky,curled_distorted;swollen_galls,mosaic_mottle
+potato dry rot,fungal,root,brown;tan;dark_black;white_gray,dry_necrotic;sunken;fuzzy_moldy,irregular;concentric_target;holes,scattered_spots
+potato bacterial soft rot,bacterial,root,brown;tan;dark_black,water_soaked;sticky_exudate,irregular,marginal_tip;coalescing_blotches
+onion basal rot,fungal,leaf;root,yellow;tan;brown;white_gray,water_soaked;dry_necrotic;fuzzy_moldy,irregular,marginal_tip;uniform_general
+garlic white rot,fungal,leaf;root;whole_plant,white_gray;dark_black;yellow,fuzzy_moldy;water_soaked,irregular,scattered_spots;uniform_general
+carrot bacterial soft rot,bacterial,root,brown;tan;dark_black,water_soaked,irregular,marginal_tip;scattered_spots

@@ -1,0 +1,5 @@
+boto3
+tqdm
+sqlalchemy>=2.0
+psycopg2-binary
+pandas
