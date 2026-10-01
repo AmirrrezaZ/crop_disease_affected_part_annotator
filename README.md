@@ -4,6 +4,14 @@ A small web app for correcting **which plant organ** (leaf, stem, fruit,
 flower, root, seed/grain, or whole plant) appears in each image of a
 plant-disease photo dataset.
 
+## 🌐 Live Web App
+
+The annotator is available online and can be used directly from a browser:
+
+**https://disease-annotator.streamlit.app/**
+
+No local installation is required to use the deployed application.
+
 ## Why this exists
 
 It's a supporting tool for a larger multimodal crop-disease diagnosis
@@ -37,7 +45,7 @@ recalibrate the organ classifier itself.
 ## Stack
 
 - **UI**: [Streamlit](https://streamlit.io), deployed on Streamlit
-  Community Cloud — free, always-on, no server to manage.
+  Community Cloud.
 - **Images**: Supabase Storage, downscaled to ~384px on upload (organ
   identification doesn't need full resolution, and it keeps the full
   ~22.7k-image dataset under 0.5GB).
@@ -92,15 +100,19 @@ images live in object storage, not in git.
 
 ### 4. Streamlit Community Cloud (hosting)
 
+The current deployed application is:
+
+**https://disease-annotator.streamlit.app/**
+
+To deploy your own copy:
+
 1. Push this repo to GitHub.
 2. [share.streamlit.io](https://share.streamlit.io) → **New app** → pick
    this repo, branch `main`, main file `app.py`.
 3. App **Settings** → **Secrets** → paste `DB_URL` and `IMAGE_PUBLIC_BASE`
    (see `.streamlit/secrets.toml.example`).
-4. Deploy. Live at `https://<your-app>.streamlit.app`.
-
-**Free-tier note**: an unused Supabase free project pauses after a week
-of inactivity (no data loss, just needs a dashboard click to resume).
+4. Deploy. Your app will be available at:
+   `https://<your-app>.streamlit.app`
 
 ### Local testing against the real DB/bucket
 
