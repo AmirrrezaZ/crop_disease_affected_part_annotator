@@ -35,6 +35,8 @@ ROOT = Path(__file__).resolve().parent
 DATA = ROOT / "data"
 PREDICTIONS = DATA / "organ_predictions.csv"
 CLASS_ATTRS = DATA / "class_attributes.csv"
+CLASS_PART_LABELS = DATA / "class_part_labels.csv"  # per-class GPT vote
+IMAGE_PART_LABELS = DATA / "image_part_labels.csv"  # per-image GPT labels (may be multi-part)
 
 IMAGE_PUBLIC_BASE = st.secrets.get("IMAGE_PUBLIC_BASE", "").rstrip("/")
 
@@ -74,8 +76,24 @@ def norm_label(label) -> str:
     return LEGACY_LABELS.get(lab, lab)
 
 
+def parse_labels(value) -> list:
+    """'leaf;fruit' -> ['leaf', 'fruit'] (valid labels only, canonical order, no dupes).
+    An image can show several affected parts; they are stored ';'-joined, the
+    same convention as class_attributes.csv."""
+    if not isinstance(value, str):
+        return []
+    found = {norm_label(v) for v in value.replace(",", ";").split(";")}
+    return [lab for lab in LABELS if lab in found]
+
+
+def join_labels(labels) -> str:
+    return ";".join(parse_labels(";".join(labels)))
+
+
 def fmt_label(label: str) -> str:
-    """'Reproductive › Fruit' style display text."""
+    """'Reproductive › Fruit' style display text; multi-part -> 'Leaf + Fruit'."""
+    if isinstance(label, str) and ";" in label:
+        return " + ".join(fmt_label(p) for p in parse_labels(label))
     lab = norm_label(label)
     if lab in GROUP_OF and GROUP_OF[lab] != DISPLAY[lab]:
         return f"{GROUP_OF[lab]} › {DISPLAY[lab]}"
@@ -105,9 +123,40 @@ def load_declared():
 
 
 @st.cache_data
+def load_class_labels():
+    """class -> part chosen by the GPT 5-sample vote (scripts/predict_class_parts.py).
+    These replace the per-image CLIP prediction for the whole class, because
+    the CLIP organ labels are too coarse for those classes (potato: root ->
+    tuber, corn smut: flower -> inflorescence, ...)."""
+    if not CLASS_PART_LABELS.exists():
+        return {}
+    df = pd.read_csv(CLASS_PART_LABELS, dtype=str).fillna("")
+    df = df[df["label"] != ""]
+    return {r["class"]: norm_label(r["label"]) for _, r in df.iterrows()}
+
+
+@st.cache_data
+def load_image_labels():
+    """path -> ';'-joined parts from the per-image GPT pass (scripts/predict_image_parts.py)."""
+    if not IMAGE_PART_LABELS.exists():
+        return {}
+    df = pd.read_csv(IMAGE_PART_LABELS, dtype=str).fillna("")
+    df["parts"] = df["parts"].map(lambda v: join_labels(parse_labels(v)))
+    return {r["path"]: r["parts"] for _, r in df.iterrows() if r["parts"]}
+
+
+@st.cache_data
 def load_predictions():
+    """Effective prediction per image, highest priority first:
+    per-image GPT labels > per-class GPT vote > the CLIP organ head."""
     df = pd.read_csv(PREDICTIONS, dtype=str).fillna("")
     df["pred_affected_part"] = df["pred_affected_part"].map(norm_label)
+    df["model_part"] = df["pred_affected_part"]  # the image-level CLIP prediction, untouched
+    class_override = df["class"].map(load_class_labels())
+    image_override = df["path"].map(load_image_labels())
+    df["gpt_label"] = class_override.notna() | image_override.notna()
+    df["pred_affected_part"] = (image_override.fillna(class_override)
+                                .fillna(df["pred_affected_part"]))
     return df
 
 
@@ -119,7 +168,7 @@ def flagged_classes(preds, declared):
     """Classes whose majority-predicted organ isn't in the declared affected_part set."""
     flagged = []
     for cls, sub in preds[preds.pred_organ != ""].groupby("class"):
-        majority_part = sub.pred_affected_part.mode()
+        majority_part = sub.model_part.mode()
         if majority_part.empty:
             continue
         decl = declared.get(cls, set())
@@ -143,7 +192,8 @@ def load_review_state(_preds):
     review = conn.query("SELECT * FROM organ_review", ttl=0)
     review = review.set_index("path")
     review["reviewed"] = review["reviewed"].astype(bool)
-    review["final_label"] = review["final_label"].map(norm_label)
+    review["final_label"] = review["final_label"].map(
+        lambda v: join_labels(parse_labels(v)) or norm_label(v))
 
     missing = _preds.loc[~_preds.path.isin(review.index)]
     if not missing.empty:
@@ -162,12 +212,13 @@ def save_one(path, cls, pred_organ, confidence, final_label):
     with conn.session as s:
         s.execute(
             text("""
-                INSERT INTO organ_review (path, class, pred_organ, confidence, final_label, reviewed, reviewed_at)
-                VALUES (:path, :cls, :pred_organ, :confidence, :final_label, TRUE, :reviewed_at)
+                INSERT INTO organ_review (path, class, pred_organ, confidence, final_label, reviewed, reviewed_at, label_source)
+                VALUES (:path, :cls, :pred_organ, :confidence, :final_label, TRUE, :reviewed_at, 'human')
                 ON CONFLICT (path) DO UPDATE SET
                     final_label = EXCLUDED.final_label,
                     reviewed = TRUE,
-                    reviewed_at = EXCLUDED.reviewed_at
+                    reviewed_at = EXCLUDED.reviewed_at,
+                    label_source = 'human'
             """),
             params={"path": path, "cls": cls, "pred_organ": pred_organ, "confidence": confidence,
                     "final_label": final_label,
@@ -176,15 +227,45 @@ def save_one(path, cls, pred_organ, confidence, final_label):
         s.commit()
 
 
+def progress_panel(preds, review):
+    """Overall review progress, shown on top of every mode.
+
+    Human-reviewed = rows with reviewed=TRUE (a person confirmed/corrected it).
+    Class-level GPT = still-unreviewed images whose label came from the
+    5-sample GPT vote for their class; they are labelled but nobody has
+    looked at them yet, so they are tracked separately, not as 'reviewed'."""
+    total = len(review)
+    done = int(review.reviewed.sum())
+    ok_paths = review.index.intersection(preds.loc[preds.gpt_label, "path"])
+    gpt_pending = int((~review.loc[ok_paths, "reviewed"]).sum()) if len(ok_paths) else 0
+    pct = done / total if total else 0.0
+
+    st.progress(min(pct, 1.0), text=f"Reviewed: {done:,} / {total:,} images ({pct:.1%})")
+    c1, c2, c3 = st.columns(3)
+    c1.metric("Reviewed", f"{done:,}")
+    c2.metric("Left to review", f"{total - done:,}")
+    c3.metric("GPT-labelled, unreviewed", f"{gpt_pending:,}",
+              help="Images whose part(s) come from GPT and that nobody has checked yet.")
+
+    with st.expander("Progress by class"):
+        by_class = review.groupby("class").reviewed.agg(reviewed="sum", total="count")
+        by_class["progress"] = (by_class.reviewed / by_class.total).round(3)
+        st.dataframe(
+            by_class.sort_values("progress"),
+            column_config={"progress": st.column_config.ProgressColumn(
+                "progress", min_value=0.0, max_value=1.0, format="percent")},
+            use_container_width=True,
+        )
+
+
 def gallery_mode(preds, declared):
     """Grid sanity-check for a chosen predicted affected_part, with an
     inline correct-or-confirm control per thumbnail so you can fix wrong
     ones right from the grid instead of one image at a time."""
     st.title("Organ predictions — gallery")
 
-    if "review" not in st.session_state:
-        st.session_state.review = load_review_state(preds)
     review = st.session_state.review
+    progress_panel(preds, review)
 
     preds_ok = preds[preds.pred_organ != ""]
 
@@ -198,7 +279,7 @@ def gallery_mode(preds, declared):
     sort_by = st.sidebar.radio(
         "Sort", ["Random sample", "Lowest confidence first", "Highest confidence first"])
 
-    scoped = preds_ok[preds_ok.pred_affected_part == part]
+    scoped = preds_ok[preds_ok.pred_affected_part.map(lambda s: part in parse_labels(s))]
     if cls != "(all classes)":
         scoped = scoped[scoped["class"] == cls]
     if only_unreviewed:
@@ -230,7 +311,11 @@ def gallery_mode(preds, declared):
                + " — pick the right part below and it saves immediately.")
 
     def on_label_change(path, cls_val, pred_organ, confidence, drop_when_reviewed):
-        sel = st.session_state[f"sel_{path}"]
+        picked = st.session_state[f"sel_{path}"]
+        if not picked:  # nothing selected: keep the previous label
+            st.toast("Pick at least one part.")
+            return
+        sel = join_labels(picked)
         save_one(path, cls_val, pred_organ, confidence, sel)
         review.loc[path, ["final_label", "reviewed"]] = [sel, True]
         if drop_when_reviewed and path in st.session_state.gallery_paths:
@@ -245,11 +330,11 @@ def gallery_mode(preds, declared):
             st.image(image_url(path), use_container_width=True)
             status = "✓ reviewed" if is_reviewed else f"conf {float(row.confidence):.2f}"
             st.caption(f"{row['class']} — {status}")
-            default_idx = LABELS.index(current_label) if current_label in LABELS \
-                else LABELS.index(DEFAULT_LABEL)
-            st.selectbox(
-                "part", LABELS, index=default_idx, format_func=fmt_label,
+            st.multiselect(
+                "part(s)", LABELS, default=parse_labels(current_label) or [DEFAULT_LABEL],
+                format_func=fmt_label,
                 key=f"sel_{path}", label_visibility="collapsed",
+                help="Select every part that visibly shows the disease.",
                 on_change=on_label_change,
                 args=(path, row["class"], row.pred_organ, row.confidence, only_unreviewed),
             )
@@ -262,9 +347,8 @@ def gallery_mode(preds, declared):
 def review_mode(preds, declared):
     st.title("Organ annotation")
 
-    if "review" not in st.session_state:
-        st.session_state.review = load_review_state(preds)
     review = st.session_state.review
+    progress_panel(preds, review)
 
     st.sidebar.header("Scope")
     scope = st.sidebar.radio(
@@ -316,9 +400,6 @@ def review_mode(preds, declared):
 
     st.sidebar.metric("Images in this scope", len(queue))
 
-    total = len(review)
-    done = int(review.reviewed.sum())
-    st.sidebar.metric("Dataset-wide progress", f"{done} / {total}", f"{done / total:.1%}")
 
     if not queue:
         st.success("Nothing left to review in this scope.")
@@ -348,11 +429,11 @@ def review_mode(preds, declared):
         st.session_state.pos = min(pos + 1, len(queue))
         st.rerun()
 
-    if st.button(f"Correct — it is '{DISPLAY.get(pred_label, pred_label)}'",
+    if st.button(f"Correct — it is '{fmt_label(pred_label)}'",
                  type="primary", use_container_width=True):
-        commit(pred_label if pred_label in LABELS else DEFAULT_LABEL)
+        commit(join_labels(parse_labels(pred_label)) or DEFAULT_LABEL)
 
-    st.write("Wrong — set the correct part:")
+    st.write("Wrong — set the correct part (one tap):")
     for group, parts in TAXONOMY.items():
         if len(parts) > 1:
             st.caption(group)
@@ -360,6 +441,13 @@ def review_mode(preds, declared):
         for col, label in zip(cols, parts):
             if col.button(DISPLAY[label], key=f"btn_{label}", use_container_width=True):
                 commit(label)
+
+    picked = st.multiselect(
+        "Or several parts at once", LABELS, default=parse_labels(pred_label),
+        format_func=fmt_label, key=f"multi_{path}",
+        help="Select every part that visibly shows the disease, then save.")
+    if st.button("Save selected parts", disabled=not picked, use_container_width=True):
+        commit(join_labels(picked))
 
     nav1, nav2 = st.columns(2)
     if nav1.button("Skip", use_container_width=True):
@@ -379,6 +467,8 @@ def main():
     preds = load_predictions()
     declared = load_declared()
 
+    if "review" not in st.session_state:
+        st.session_state.review = load_review_state(preds)
     mode = st.sidebar.radio("Mode", ["Gallery (browse)", "Review (correct)"])
     st.sidebar.divider()
     if mode == "Gallery (browse)":

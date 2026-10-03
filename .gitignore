@@ -4,3 +4,8 @@ __pycache__/
 venv/
 .streamlit/secrets.toml
 .env
+
+# local-only: LLM labelling script (not pushed)
+scripts/predict_class_parts.py
+missing_from_bucket.txt
+scripts/predict_image_parts.py

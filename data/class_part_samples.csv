@@ -1,0 +1,70 @@
+class,round,path,part,confidence,reason
+corn smut,0,plantwild/images/corn smut/google_0020.jpg,inflorescence,0.88,Ear/cob and kernels (inflorescence) showing smut galls
+corn smut,0,plantwild/images/corn smut/google_0283.jpg,inflorescence,0.92,Corn ear/cob with smut galls on kernels (inflorescence)
+corn smut,0,plantwild/images/corn smut/33.jpg,inflorescence,0.92,gall-like tumor on corn ear/cob area (inflorescence)
+corn smut,0,plantwild/images/corn smut/google_0134.jpg,inflorescence,0.87,Infected corn ears/cobs (flower clusters) showing smut galls
+corn smut,0,plantwild/images/corn smut/google_0094.jpg,inflorescence,0.92,Enlarged galls on the corn ear/cob (inflorescence) visible
+wheat head scab,0,plantwild_v2/wheat head scab/wheat_head_scab_Baidu_0085.jpg,inflorescence,0.94,Wheat ears/spikes (heads) showing infected spikelets
+wheat head scab,0,plantwild_v2/wheat head scab/wheat_head_scab_Bing_0025.jpg,inflorescence,0.92,Wheat ear/spike is the primary visible plant structure
+wheat head scab,0,plantwild_v2/wheat head scab/wheat_head_scab_Bing_0214.jpg,inflorescence,0.92,Shows wheat spike/ear with infected spikelets (head)
+wheat head scab,0,plantwild_v2/wheat head scab/wheat_head_scab_Bing_0068.jpg,inflorescence,0.95,Shows wheat heads/ears (spikes) as main visible plant part
+wheat head scab,0,plantwild_v2/wheat head scab/wheat_head_scab_Google_0131.jpg,inflorescence,0.93,Wheat ears/spikes are the visible flower/inflorescence structures showing disease
+wheat loose smut,0,plantwild_v2/wheat loose smut/wheat_loose_smut_Google_0007.jpg,inflorescence,0.86,Smutted wheat ear/spike clearly visible showing disease on head
+wheat loose smut,0,plantwild_v2/wheat loose smut/wheat_loose_smut_Bing_0111.jpg,inflorescence,0.92,Smutted wheat heads/spikes (ears) are the affected plant part
+wheat loose smut,0,plantwild_v2/wheat loose smut/wheat_loose_smut_Google_0037.jpg,inflorescence,0.92,Visible wheat spikes/ears with smutty infected grains
+wheat loose smut,0,plantwild_v2/wheat loose smut/wheat_loose_smut_Bing_0092.jpg,inflorescence,0.90,Showing wheat spikes/ears with infected spikelets characteristic of loose smut
+wheat loose smut,0,plantwild_v2/wheat loose smut/wheat_loose_smut_Bing_0077.jpg,inflorescence,0.94,Wheat head/spike clearly shown with smut-infected grains replaced
+wheat bacterial leaf streak (black chaff),0,plantwild_v2/wheat bacterial leaf streak (black chaff)/wheat_bacterial_leaf_streak_(black_chaff)_black_chaff (2).jpg,inflorescence,0.89,Close-up of a wheat spike/ear showing grain-bearing head
+wheat bacterial leaf streak (black chaff),0,plantwild_v2/wheat bacterial leaf streak (black chaff)/wheat_bacterial_leaf_streak_(black_chaff)_Baidu_0206.jpg,leaf,0.85,Long narrow leaf blades with lesions visible on leaf surfaces
+wheat bacterial leaf streak (black chaff),0,plantwild_v2/wheat bacterial leaf streak (black chaff)/wheat_bacterial_leaf_streak_(black_chaff)_Baidu_0040.jpg,leaf,0.92,Visible elongated leaf blades with streaked lesions
+wheat bacterial leaf streak (black chaff),0,plantwild_v2/wheat bacterial leaf streak (black chaff)/wheat_bacterial_leaf_streak_(black_chaff)_black_chaff (25).jpg,leaf,0.92,Visible leaf blades with streaked lesions across multiple leaves
+wheat bacterial leaf streak (black chaff),0,plantwild_v2/wheat bacterial leaf streak (black chaff)/wheat_bacterial_leaf_streak_(black_chaff)_Google_0325.jpg,leaf,0.92,Close-up of a single grass leaf blade with streaked lesions
+carrot alternaria leaf blight,0,plantwild_v2/carrot alternaria leaf blight/carrot_alternaria_leaf_blight_Bing_0000.jpg,leaf,0.86,Visible leaf blades and pinnate leaflets are main diseased parts
+carrot alternaria leaf blight,0,plantwild_v2/carrot alternaria leaf blight/carrot_alternaria_leaf_blight_Bing_0006.jpg,leaf,0.85,Pinnate leaf blades showing lesions and discoloration.
+carrot alternaria leaf blight,0,plantwild_v2/carrot alternaria leaf blight/carrot_alternaria_leaf_blight_Bing_0075.jpg,leaf,0.88,Pinnate leaf blades with visible lesions
+carrot alternaria leaf blight,0,plantwild_v2/carrot alternaria leaf blight/carrot_alternaria_leaf_blight_Bing_0021.jpg,leaf,0.87,"Necrotic, blighted leaf blades are the prominent diseased structures"
+carrot alternaria leaf blight,0,plantwild_v2/carrot alternaria leaf blight/carrot_alternaria_leaf_blight_Bing_0129.jpg,leaf,0.90,"Curled, necrotic leaf blades/leaflets with lesions visible"
+cauliflower bacterial soft rot,0,plantwild_v2/cauliflower bacterial soft rot/cauliflower_bacterial_soft_rot_Google_0021.jpg,inflorescence,0.92,Cauliflower curd (flower cluster/curd) is the main visible part
+cauliflower bacterial soft rot,0,plantwild_v2/cauliflower bacterial soft rot/cauliflower_bacterial_soft_rot_Bing_0042.jpg,inflorescence,0.94,Cauliflower curd (flower cluster) is the visible diseased organ
+cauliflower bacterial soft rot,0,plantwild_v2/cauliflower bacterial soft rot/cauliflower_bacterial_soft_rot_Bing_0137.jpg,inflorescence,0.94,Cauliflower curd (cluster of flower buds) is the primary visible part
+cauliflower bacterial soft rot,0,plantwild_v2/cauliflower bacterial soft rot/cauliflower_bacterial_soft_rot_Bing_0066.jpg,inflorescence,0.90,cauliflower curd/flower head is the primary affected structure
+cauliflower bacterial soft rot,0,plantwild_v2/cauliflower bacterial soft rot/cauliflower_bacterial_soft_rot_Bing_0021.jpg,inflorescence,0.92,Cauliflower curd (flower cluster) showing rot symptoms
+blueberry botrytis blight,0,plantwild_v2/blueberry botrytis blight/blueberry_botrytis_blight_Google_0345.jpg,fruit,0.86,Clusters of berries/fruit and spent blossoms are the disease focus
+blueberry botrytis blight,0,plantwild_v2/blueberry botrytis blight/blueberry_botrytis_blight_Bing_0026.jpg,fruit,0.90,Visible infected berries/fruit are the primary subjects in the photo
+blueberry botrytis blight,0,plantwild_v2/blueberry botrytis blight/blueberry_botrytis_blight_Bing_0167.jpg,fruit,0.86,Visible berries/fruit are the primary diseased structures in image
+blueberry botrytis blight,0,plantwild_v2/blueberry botrytis blight/blueberry_botrytis_blight_Google_0098.jpg,inflorescence,0.86,Cluster of blossoms/flower structures clearly central in the image
+blueberry botrytis blight,0,plantwild_v2/blueberry botrytis blight/blueberry_botrytis_blight_Bing_0035.jpg,inflorescence,0.86,Cluster of blossoms/flower heads showing decay rather than single leaf
+blueberry scorch,0,plantwild_v2/blueberry scorch/blueberry_scorch_Bing_0106.jpg,inflorescence,0.78,"Dried, clustered flower/flower-head structures at branch tips are prominent"
+blueberry scorch,0,plantwild_v2/blueberry scorch/blueberry_scorch_Bing_0031.jpg,fruit,0.85,Shriveled brown berries/fruit clusters are the primary diseased structures
+blueberry scorch,0,plantwild_v2/blueberry scorch/blueberry_scorch_Bing_0014.jpg,leaf,0.92,Visible individual leaves with necrotic/brown scorch symptoms
+blueberry scorch,0,plantwild_v2/blueberry scorch/blueberry_scorch_Bing_0107.jpg,leaf,0.88,Prominent diseased leaf blades with browning and necrosis are visible
+blueberry scorch,0,plantwild_v2/blueberry scorch/blueberry_scorch_Bing_0005.jpg,leaf,0.93,"Discolored, necrotic leaf blades are the prominent diseased feature"
+raspberry fire blight,0,plantwild_v2/raspberry fire blight/raspberry_fire_blight_Google_0068.jpg,stem,0.86,Prominent cane/branch is central showing lesions and attached dead leaves
+raspberry fire blight,0,plantwild_v2/raspberry fire blight/raspberry_fire_blight_Bing_0028.jpg,leaf,0.90,"Dried, curled brown leaves are the prominent diseased feature"
+raspberry fire blight,0,plantwild_v2/raspberry fire blight/raspberry_fire_blight_Bing_0127.jpg,leaf,0.86,Browning and necrosis clearly visible on leaf blades and leaf clusters
+raspberry fire blight,0,plantwild_v2/raspberry fire blight/raspberry_fire_blight_Bing_0038.jpg,leaf,0.86,Wilted and discolored leaf blades are the prominent affected structures
+raspberry fire blight,0,plantwild_v2/raspberry fire blight/raspberry_fire_blight_Bing_0009.jpg,inflorescence,0.82,Prominent withered flower/fruit clusters visible as main subject
+potato bacterial soft rot,0,plantwild_v2/potato bacterial soft rot/wsu_potato-bacterial-soft-rot-1L.jpg,tuber,0.92,Sliced potato tuber showing internal rot symptoms
+potato bacterial soft rot,0,plantwild_v2/potato bacterial soft rot/wsu_potato-bacterial-soft-rot-6L.jpg,tuber,0.92,Close-up of a potato tuber showing surface lesions and decay
+potato bacterial soft rot,0,plantwild_v2/potato bacterial soft rot/wsu_dg119L.jpg,tuber,0.95,Cut potato tuber showing internal soft rot symptoms
+potato bacterial soft rot,0,plantwild_v2/potato bacterial soft rot/wsu_potato-bacterial-soft-rot-2L.jpg,tuber,0.92,Cross-sections of potato tubers showing internal rot symptoms
+potato dry rot,0,plantwild_v2/potato dry rot/wsu_Fusarium-tuber-dry-rot-InglisL.jpg,tuber,0.98,Cut potato tuber showing internal dry rot symptoms
+potato dry rot,0,plantwild_v2/potato dry rot/wsu_Fusarium-tuber-dry-rot-2-InglisL.jpg,tuber,0.92,Cross-section of a potato tuber showing internal dry rot symptoms
+onion basal rot,0,plantwild_v2/onion basal rot/wsu_dg88L.jpg,bulb,0.88,Onion bulb clearly visible with basal rot symptoms.
+onion basal rot,0,plantwild_v2/onion basal rot/wsu_dg90L.jpg,bulb,0.91,Clearly shows onion bulbs with basal roots and decay on bulb bottoms
+onion basal rot,0,plantwild_v2/onion basal rot/wsu_onion-fusarium-basal-rot-5L.jpg,bulb,0.95,Cross-sections clearly show onion bulbs with basal rot symptoms
+onion basal rot,0,plantwild_v2/onion basal rot/wsu_dg92L.jpg,bulb,0.95,"Clearly shows onion bulbs being held, main visible plant part"
+onion basal rot,0,plantwild_v2/onion basal rot/wsu_onion-fusarium-basal-rot-4L.jpg,bulb,0.92,Cut onion bulbs are the prominent plant part showing symptoms
+garlic white rot,0,plantwild_v2/garlic white rot/wsu_garlic-whie-rot-3L.jpg,bulb,0.92,Shows garlic bulb/clove area with white rot symptoms on bulb tissue
+garlic white rot,0,plantwild_v2/garlic white rot/wsu_garlic-white-rot-1L.jpg,bulb,0.92,Clearly shows garlic bulbs and cloves with roots attached
+garlic white rot,0,plantwild_v2/garlic white rot/wsu_garlic-white-rot-2L.jpg,bulb,0.95,Close-up of garlic cloves/bulb showing rot and mold
+carrot cavity spot,0,plantwild/images/carrot cavity spot/google_0003.jpg,root,0.96,Close-up of carrot taproots showing lesions and cavity spots
+carrot cavity spot,0,plantwild/images/carrot cavity spot/google_0247.jpg,root,0.95,Visible carrot taproots are the main subject
+carrot cavity spot,0,plantwild/images/carrot cavity spot/google_0033.jpg,root,0.92,Close-up of carrot taproots showing surface lesions and cavities
+carrot cavity spot,0,plantwild/images/carrot cavity spot/1.jpg,root,0.95,Visible carrot taproots with cavity spot lesions on root surface
+carrot cavity spot,0,plantwild/images/carrot cavity spot/google_0095.jpg,root,0.95,Close-up of a carrot taproot showing cavity lesions
+carrot bacterial soft rot,0,plantwild_v2/carrot bacterial soft rot/wsu_carrot-bacterial-soft-rot-10L.jpg,root,0.87,Visible carrot root crown and lower root showing decay and rot
+carrot bacterial soft rot,0,plantwild_v2/carrot bacterial soft rot/wsu_carrot-bacterial-soft-rot-11L.jpg,root,0.96,Carrot taproots are the primary diseased organs visible
+carrot bacterial soft rot,0,plantwild_v2/carrot bacterial soft rot/wsu_carrot-bacterial-soft-rot-9L.jpg,root,0.90,Visible carrot taproot/crown showing rot and collapsed foliage
+carrot bacterial soft rot,0,plantwild_v2/carrot bacterial soft rot/wsu_carrot-bacterial-soft-rot-6L.jpg,root,0.95,Close-up of a carrot taproot showing rot lesions
+carrot bacterial soft rot,0,plantwild_v2/carrot bacterial soft rot/wsu_carrot-bacterial-soft-rot-8L.jpg,leaf,0.82,Visible above-ground foliage/leaf blades in rows; roots not visible

@@ -10,6 +10,10 @@ create table if not exists organ_review (
     reviewed_at  timestamptz
 );
 
+-- 'human' = confirmed/corrected in the app; 'gpt_class' = set from the per-class
+-- GPT vote (scripts/predict_class_parts.py), not yet looked at by a person.
+alter table organ_review add column if not exists label_source text;
+
 create index if not exists organ_review_reviewed_idx on organ_review (reviewed);
 create index if not exists organ_review_class_idx on organ_review (class);
 

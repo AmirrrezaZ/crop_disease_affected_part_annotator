@@ -42,6 +42,46 @@ recalibrate the organ classifier itself.
   progress is the same whether you're on a laptop or a phone, and
   multiple sessions never clobber each other.
 
+## Class-level labels from a vision LLM
+
+For classes where the old single label is too coarse for the new taxonomy
+(potato rot: root → tuber, corn smut: flower → inflorescence, ...),
+a local-only script (`scripts/predict_class_parts.py`, gitignored — it is
+not part of this repo) samples 5 random images per class, asks
+`gpt-5-mini` (via AvalAI) which part each shows, and applies the **mode** to
+every image of that class.
+
+- `data/class_part_candidates.csv` — the hand-checked list of classes to
+  process, with the reason for each (edit it to add/remove classes).
+- `data/class_part_samples.csv` — every sampled image and the model's answer.
+- `data/class_part_labels.csv` — the winning label per class. The app uses it
+  to override the per-image CLIP prediction for those classes.
+- Ties (fewer than 3/5 votes) get one extra round of 5 images; still-unclear
+  classes are flagged `needs_check`.
+- `--apply` / `--apply-only` writes the label to `organ_review` with
+  `label_source='gpt_class'`, **only for images no human has reviewed yet**.
+
+```bash
+python3.10 -m venv .venv && .venv/bin/pip install openai boto3 psycopg2-binary pandas pillow tqdm python-dotenv requests
+# .env needs AVALAI_API_KEY (and DB_URL for --apply)
+.venv/bin/python scripts/predict_class_parts.py --list-classes
+.venv/bin/python scripts/predict_class_parts.py            # label, no DB writes
+.venv/bin/python scripts/predict_class_parts.py --apply    # also update the DB
+.venv/bin/python scripts/check_bucket.py --http-sample 40  # verify every image is in the bucket
+```
+
+**Per-image, multi-part labels.** For the single-part, non-leaf diseased
+classes (corn smut, wheat head scab, potato/onion/garlic rot, banana/blueberry
+fruit diseases, ... — 18 classes, 1,396 images) a second local script,
+`scripts/predict_image_parts.py`, judges every image on its own and may return
+several parts (e.g. `leaf;fruit`). Results are in `data/image_part_labels.csv`
+and take priority over the class-level vote in the app. A label with several
+parts is stored `;`-joined in `organ_review.final_label`, and the gallery /
+review screens let you select more than one part per image.
+
+The app's progress panel counts only human-reviewed images as "reviewed";
+GPT-labelled-but-unchecked images are shown as a separate number.
+
 ## Stack
 
 - **UI**: [Streamlit](https://streamlit.io), deployed on Streamlit

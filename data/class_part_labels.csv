@@ -1,0 +1,16 @@
+class,label,votes,n_samples,agreement,status
+corn smut,inflorescence,inflorescence:5,5,1.00,ok
+wheat head scab,inflorescence,inflorescence:5,5,1.00,ok
+wheat loose smut,inflorescence,inflorescence:5,5,1.00,ok
+wheat bacterial leaf streak (black chaff),leaf,leaf:4; inflorescence:1,5,0.80,ok
+carrot alternaria leaf blight,leaf,leaf:5,5,1.00,ok
+cauliflower bacterial soft rot,inflorescence,inflorescence:5,5,1.00,ok
+blueberry botrytis blight,fruit,fruit:3; inflorescence:2,5,0.60,ok
+blueberry scorch,leaf,leaf:3; inflorescence:1; fruit:1,5,0.60,ok
+raspberry fire blight,leaf,leaf:3; stem:1; inflorescence:1,5,0.60,ok
+potato bacterial soft rot,tuber,tuber:4,4,1.00,ok
+potato dry rot,tuber,tuber:2,2,1.00,needs_check
+onion basal rot,bulb,bulb:5,5,1.00,ok
+garlic white rot,bulb,bulb:3,3,1.00,ok
+carrot cavity spot,root,root:5,5,1.00,ok
+carrot bacterial soft rot,root,root:4; leaf:1,5,0.80,ok

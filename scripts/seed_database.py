@@ -72,7 +72,7 @@ def main():
                 create table if not exists organ_review (
                     path text primary key, class text not null, pred_organ text,
                     confidence text, final_label text, reviewed boolean not null default false,
-                    reviewed_at timestamptz
+                    reviewed_at timestamptz, label_source text
                 )
             """)
         conn.commit()
