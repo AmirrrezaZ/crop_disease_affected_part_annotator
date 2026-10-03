@@ -458,6 +458,192 @@ def review_mode(preds, declared):
         st.rerun()
 
 
+# ------------------------------------------------- symptom attributes
+ATTRIBUTES = ["color", "texture", "shape", "pattern"]
+NONE_VALUE = "none"  # healthy / not visible / not applicable
+
+
+@st.cache_data
+def load_attribute_vocab():
+    """(vocab, per_class): vocab[attr] = every value used in class_attributes.csv,
+    per_class[attr][class] = the values declared for that class."""
+    df = pd.read_csv(CLASS_ATTRS, dtype=str).fillna("")
+    vocab, per_class = {}, {}
+    for a in ATTRIBUTES:
+        vals = df[a].map(lambda s: [v for v in s.split(";") if v])
+        vocab[a] = sorted({v for vs in vals for v in vs})
+        per_class[a] = dict(zip(df["class"], vals))
+    return vocab, per_class
+
+
+def fmt_attr(value: str) -> str:
+    return value.replace("_", " ")
+
+
+def parse_attr(value, options) -> list:
+    """'brown;tan' -> ['brown', 'tan'], keeping only entries present in options."""
+    if not isinstance(value, str):
+        return []
+    found = {v.strip() for v in value.split(";") if v.strip()}
+    return [o for o in options if o in found]
+
+
+def join_attr(values, vocab) -> str:
+    """Canonical (vocab-ordered) ';'-joined value; 'none' only stands alone."""
+    chosen = [v for v in vocab if v in set(values)]
+    if not chosen:
+        return NONE_VALUE if NONE_VALUE in values else ""
+    return ";".join(chosen)
+
+
+def load_attribute_rows(attribute):
+    key = f"attr_rows_{attribute}"
+    if key not in st.session_state:
+        df = get_conn().query(
+            "SELECT path, class, value, reviewed, label_source FROM attribute_review "
+            "WHERE attribute = :a", params={"a": attribute}, ttl=0)
+        df["reviewed"] = df["reviewed"].astype(bool)
+        df["value"] = df["value"].fillna("")
+        df["label_source"] = df["label_source"].fillna("")
+        st.session_state[key] = df.set_index("path")
+    return st.session_state[key]
+
+
+def save_attribute(path, attribute, cls, value):
+    conn = get_conn()
+    with conn.session as s:
+        s.execute(
+            text("""
+                INSERT INTO attribute_review (path, attribute, class, value, reviewed, reviewed_at, label_source)
+                VALUES (:path, :attribute, :cls, :value, TRUE, :reviewed_at, 'human')
+                ON CONFLICT (path, attribute) DO UPDATE SET
+                    value = EXCLUDED.value, reviewed = TRUE,
+                    reviewed_at = EXCLUDED.reviewed_at, label_source = 'human'
+            """),
+            params={"path": path, "attribute": attribute, "cls": cls, "value": value,
+                    "reviewed_at": datetime.now(timezone.utc)},
+        )
+        s.commit()
+
+
+def attribute_progress():
+    """One progress bar per attribute (reviewed = a person or a class rule fixed it)."""
+    df = get_conn().query(
+        "SELECT attribute, COUNT(*) AS total, COUNT(*) FILTER (WHERE reviewed) AS done, "
+        "COUNT(*) FILTER (WHERE NOT reviewed AND label_source = 'gpt_image') AS gpt "
+        "FROM attribute_review GROUP BY attribute", ttl=5).set_index("attribute")
+    tot, done = int(df.total.sum()), int(df.done.sum())
+    st.progress(done / tot if tot else 0.0,
+                text=f"All attributes: {done:,} / {tot:,} reviewed ({done / tot:.1%})")
+    cols = st.columns(len(ATTRIBUTES))
+    for col, a in zip(cols, ATTRIBUTES):
+        if a in df.index:
+            r = df.loc[a]
+            col.metric(a.title(), f"{r.done / r.total:.0%}",
+                       help=f"{int(r.gpt):,} of the unreviewed have a GPT suggestion")
+            col.caption(f"{int(r.total - r.done):,} left")
+
+
+def attribute_mode(preds):
+    st.title("Symptom attributes")
+    vocab, per_class = load_attribute_vocab()
+    attribute_progress()
+    st.caption("Single-value classes and healthy classes are already filled in and counted as "
+               "reviewed. Multi-value classes need a per-image choice among **that class's own** "
+               "values (or `none` if the symptom isn't visible).")
+
+    st.sidebar.header("Attributes")
+    attribute = st.sidebar.selectbox("Attribute", ATTRIBUTES, format_func=str.title)
+    rows = load_attribute_rows(attribute)
+    declared = per_class[attribute]
+    multi = {c for c, v in declared.items() if len(v) > 1}
+
+    include_auto = st.sidebar.checkbox("Include auto-labelled classes", value=False,
+                                       help="Single-value / healthy classes (already reviewed).")
+    pool = sorted(rows["class"].unique()) if include_auto else sorted(multi & set(rows["class"]))
+    cls = st.sidebar.selectbox("Class", ["(all classes)"] + pool)
+    only_unreviewed = st.sidebar.checkbox("Only unreviewed", value=True)
+    only_gpt = st.sidebar.checkbox("Only GPT-suggested", value=False)
+    show_all = st.sidebar.checkbox("Offer all values (not just the class's)", value=False)
+    n = st.sidebar.slider("How many images", 1, 48, 12)
+    cols_n = st.sidebar.slider("Grid columns", 1, 6, 2)
+
+    scoped = rows[rows["class"].isin(pool)]
+    if cls != "(all classes)":
+        scoped = scoped[scoped["class"] == cls]
+    if only_unreviewed:
+        scoped = scoped[~scoped.reviewed]
+    if only_gpt:
+        scoped = scoped[scoped.label_source == "gpt_image"]
+    st.sidebar.metric("Matching images", len(scoped))
+
+    sig = (attribute, cls, only_unreviewed, only_gpt, n)
+    resample = st.sidebar.button("🔄 New sample")
+    if st.session_state.get("attr_sig") != sig or resample:
+        sample = scoped.sample(min(n, len(scoped))) if len(scoped) else scoped
+        st.session_state.attr_paths = sample.index.tolist()
+        st.session_state.attr_sig = sig
+    paths = st.session_state.get("attr_paths", [])
+    if not paths:
+        st.success("Nothing left in this selection." if only_unreviewed else "No images match.")
+        return
+
+    def options_for(cls_val):
+        base = vocab[attribute] if show_all else declared.get(cls_val, []) or vocab[attribute]
+        return list(base) + [NONE_VALUE]
+
+    def wkey(path):
+        return f"attr_{attribute}_{int(show_all)}_{path}"
+
+    def default_for(path):
+        r = rows.loc[path]
+        return parse_attr(r["value"], options_for(r["class"]))
+
+    def commit(path):
+        r = rows.loc[path]
+        picked = st.session_state.get(wkey(path), default_for(path))
+        if not picked:
+            st.toast("Pick at least one value (or 'none').")
+            return False
+        value = join_attr(picked, vocab[attribute])
+        save_attribute(path, attribute, r["class"], value)
+        rows.loc[path, ["value", "reviewed", "label_source"]] = [value, True, "human"]
+        if only_unreviewed and path in st.session_state.attr_paths:
+            st.session_state.attr_paths.remove(path)
+        return True
+
+    st.caption(f"{len(paths)} images — choose every **{attribute}** value that is visibly part "
+               "of the symptom; it saves immediately.")
+    if st.button("✓ Confirm all shown (that have a selection)", use_container_width=True):
+        for p in list(paths):
+            if st.session_state.get(wkey(p), default_for(p)):  # skip images with nothing chosen
+                commit(p)
+        st.rerun()
+
+    cols = st.columns(cols_n)
+    for i, path in enumerate(paths):
+        r = rows.loc[path]
+        with cols[i % cols_n]:
+            st.image(image_url(path), use_container_width=True)
+            if r["reviewed"]:
+                status = "✓ reviewed"
+            elif r["label_source"] == "gpt_image":
+                status = "GPT suggestion"
+            else:
+                status = "not annotated"
+            st.caption(f"{r['class']} — {status}")
+            st.caption("class values: " + (", ".join(fmt_attr(v) for v in declared.get(r["class"], [])) or "—"))
+            st.multiselect(
+                attribute, options_for(r["class"]), default=default_for(path),
+                format_func=fmt_attr, key=wkey(path), label_visibility="collapsed",
+                on_change=commit, args=(path,),
+            )
+            if not r["reviewed"] and st.button("✓ Confirm", key=f"attrok_{attribute}_{path}",
+                                               use_container_width=True):
+                if commit(path):
+                    st.rerun()
+
+
 def main():
     if not st.secrets.get("IMAGE_PUBLIC_BASE") or not st.secrets.get("DB_URL"):
         st.error("Missing secrets: set IMAGE_PUBLIC_BASE and DB_URL in this app's Settings → Secrets. "
@@ -469,10 +655,13 @@ def main():
 
     if "review" not in st.session_state:
         st.session_state.review = load_review_state(preds)
-    mode = st.sidebar.radio("Mode", ["Gallery (browse)", "Review (correct)"])
+    mode = st.sidebar.radio("Mode", ["Gallery (browse)", "Review (correct)",
+                                     "Attributes (color, texture, ...)"])
     st.sidebar.divider()
     if mode == "Gallery (browse)":
         gallery_mode(preds, declared)
+    elif mode.startswith("Attributes"):
+        attribute_mode(preds)
     else:
         review_mode(preds, declared)
 

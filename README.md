@@ -79,6 +79,28 @@ and take priority over the class-level vote in the app. A label with several
 parts is stored `;`-joined in `organ_review.final_label`, and the gallery /
 review screens let you select more than one part per image.
 
+## Symptom attributes (color, texture, shape, pattern)
+
+Besides *affected part*, each image also has `color`, `texture`, `shape` and
+`pattern` attributes, stored in the `attribute_review` table (one row per image
+and attribute, `;`-joined when several apply). `scripts/seed_attributes.py`
+fills it from `data/class_attributes.csv` with these rules:
+
+| Class situation | Result |
+|---|---|
+| Healthy class | `none`, marked reviewed |
+| Diseased, attribute has no value | `none`, marked reviewed |
+| Diseased, attribute has exactly **one** value | that value for every image of the class, marked reviewed |
+| Diseased, attribute has **2+ values** | left for annotation — pick which of *that class's* values are visible |
+
+Images still to annotate: color 14,733 · shape 7,751 · pattern 9,167 ·
+texture 4,672 (14,995 distinct images; most need several attributes).
+
+The app's **Attributes** mode shows one multiselect per image, limited to the
+class's own values (plus `none`), saves on change, and has a progress bar per
+attribute. Suggestions from GPT appear pre-filled with a "GPT suggestion" badge
+and still count as *unreviewed* until a person confirms them.
+
 The app's progress panel counts only human-reviewed images as "reviewed";
 GPT-labelled-but-unchecked images are shown as a separate number.
 

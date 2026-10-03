@@ -9,3 +9,6 @@ venv/
 scripts/predict_class_parts.py
 missing_from_bucket.txt
 scripts/predict_image_parts.py
+scripts/predict_image_attributes.py
+data/image_attribute_labels.csv
+scripts/seed_attributes.py.bak
