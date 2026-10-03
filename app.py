@@ -11,6 +11,14 @@ Differences from the local version this was adapted from:
   - Defaults tuned for a phone-width viewport (2 gallery columns, fewer
     unreviewed default) -- desktop still works, just widen the sliders.
 
+Label taxonomy (affected part):
+  Vegetative    -> leaf, stem, root
+  Reproductive  -> flower, inflorescence, fruit, seed_grain
+  Storage       -> tuber, bulb
+  Whole plant / Unknown -> whole_plant_unknown
+Legacy labels from older predictions / reviews / class_attributes.csv
+(whole_plant, not_plant_other, ...) are normalized via LEGACY_LABELS.
+
 Run locally against the same DB/bucket for testing:
   streamlit run app.py
 Deployed: pushed to GitHub, connected at share.streamlit.io, with
@@ -30,8 +38,49 @@ CLASS_ATTRS = DATA / "class_attributes.csv"
 
 IMAGE_PUBLIC_BASE = st.secrets.get("IMAGE_PUBLIC_BASE", "").rstrip("/")
 
-PARTS = ["leaf", "stem", "fruit", "flower", "root", "seed_grain", "whole_plant"]
-LABELS = PARTS + ["not_plant_other"]
+# ---------------------------------------------------------------- taxonomy
+TAXONOMY = {
+    "Vegetative": ["leaf", "stem", "root"],
+    "Reproductive": ["flower", "inflorescence", "fruit", "seed_grain"],
+    "Storage": ["tuber", "bulb"],
+    "Whole plant / Unknown": ["whole_plant_unknown"],
+}
+LABELS = [p for parts in TAXONOMY.values() for p in parts]
+GROUP_OF = {p: g for g, parts in TAXONOMY.items() for p in parts}
+DISPLAY = {
+    "leaf": "Leaf", "stem": "Stem", "root": "Root",
+    "flower": "Flower", "inflorescence": "Inflorescence", "fruit": "Fruit",
+    "seed_grain": "Seed / Grain",
+    "tuber": "Tuber", "bulb": "Bulb",
+    "whole_plant_unknown": "Whole plant / Unknown",
+}
+DEFAULT_LABEL = "whole_plant_unknown"
+
+# Old label names -> new taxonomy
+LEGACY_LABELS = {
+    "whole_plant": "whole_plant_unknown",
+    "not_plant_other": "whole_plant_unknown",
+    "unknown": "whole_plant_unknown",
+    "seed": "seed_grain",
+    "grain": "seed_grain",
+    "seed/grain": "seed_grain",
+}
+
+
+def norm_label(label) -> str:
+    if not isinstance(label, str):
+        return ""
+    lab = label.strip().lower()
+    return LEGACY_LABELS.get(lab, lab)
+
+
+def fmt_label(label: str) -> str:
+    """'Reproductive › Fruit' style display text."""
+    lab = norm_label(label)
+    if lab in GROUP_OF and GROUP_OF[lab] != DISPLAY[lab]:
+        return f"{GROUP_OF[lab]} › {DISPLAY[lab]}"
+    return DISPLAY.get(lab, label or "—")
+
 
 st.set_page_config(page_title="Organ annotation", layout="centered")
 
@@ -51,13 +100,19 @@ def load_declared():
     if CLASS_ATTRS.exists():
         df = pd.read_csv(CLASS_ATTRS, dtype=str).fillna("")
         for _, r in df.iterrows():
-            declared[r["class"]] = set(v for v in r["affected_part"].split(";") if v)
+            declared[r["class"]] = set(norm_label(v) for v in r["affected_part"].split(";") if v)
     return declared
 
 
 @st.cache_data
 def load_predictions():
-    return pd.read_csv(PREDICTIONS, dtype=str).fillna("")
+    df = pd.read_csv(PREDICTIONS, dtype=str).fillna("")
+    df["pred_affected_part"] = df["pred_affected_part"].map(norm_label)
+    return df
+
+
+def predicted_label(row) -> str:
+    return row.pred_affected_part or norm_label(row.pred_organ) or DEFAULT_LABEL
 
 
 def flagged_classes(preds, declared):
@@ -82,17 +137,20 @@ def multi_part_classes(preds, declared):
 def load_review_state(_preds):
     """All rows from the organ_review table, reconciled against the current
     predictions CSV: any path not yet in the table gets a default unreviewed
-    row (in-memory only, first save persists it)."""
+    row (in-memory only, first save persists it). Old label names in the DB
+    are normalized in memory to the new taxonomy."""
     conn = get_conn()
     review = conn.query("SELECT * FROM organ_review", ttl=0)
     review = review.set_index("path")
     review["reviewed"] = review["reviewed"].astype(bool)
+    review["final_label"] = review["final_label"].map(norm_label)
 
     missing = _preds.loc[~_preds.path.isin(review.index)]
     if not missing.empty:
         new_rows = pd.DataFrame({
             "class": missing["class"].values, "pred_organ": missing.pred_organ.values,
-            "confidence": missing.confidence.values, "final_label": missing.pred_affected_part.values,
+            "confidence": missing.confidence.values,
+            "final_label": missing.pred_affected_part.values,
             "reviewed": False, "reviewed_at": pd.NaT,
         }, index=pd.Index(missing.path.values, name="path"))
         review = pd.concat([review, new_rows])
@@ -131,7 +189,7 @@ def gallery_mode(preds, declared):
     preds_ok = preds[preds.pred_organ != ""]
 
     st.sidebar.header("Gallery")
-    part = st.sidebar.selectbox("Predicted affected_part", PARTS)
+    part = st.sidebar.selectbox("Predicted affected part", LABELS, format_func=fmt_label)
     all_classes = ["(all classes)"] + sorted(preds_ok["class"].unique())
     cls = st.sidebar.selectbox("Class", all_classes)
     only_unreviewed = st.sidebar.checkbox("Only unreviewed", value=True)
@@ -167,7 +225,7 @@ def gallery_mode(preds, declared):
         st.info("No images match this filter.")
         return
 
-    st.caption(f"{len(paths)} images predicted **{part}**"
+    st.caption(f"{len(paths)} images predicted **{fmt_label(part)}**"
                + (f" for class **{cls}**" if cls != "(all classes)" else "")
                + " — pick the right part below and it saves immediately.")
 
@@ -178,20 +236,19 @@ def gallery_mode(preds, declared):
         if drop_when_reviewed and path in st.session_state.gallery_paths:
             st.session_state.gallery_paths.remove(path)
 
-    options = LABELS
     cols = st.columns(cols_n)
     for i, path in enumerate(paths):
         row = preds[preds.path == path].iloc[0]
         is_reviewed = bool(review.loc[path, "reviewed"])
-        current_label = review.loc[path, "final_label"] if is_reviewed \
-            else (row.pred_affected_part or row.pred_organ)
+        current_label = review.loc[path, "final_label"] if is_reviewed else predicted_label(row)
         with cols[i % cols_n]:
             st.image(image_url(path), use_container_width=True)
             status = "✓ reviewed" if is_reviewed else f"conf {float(row.confidence):.2f}"
             st.caption(f"{row['class']} — {status}")
-            default_idx = options.index(current_label) if current_label in options else 0
+            default_idx = LABELS.index(current_label) if current_label in LABELS \
+                else LABELS.index(DEFAULT_LABEL)
             st.selectbox(
-                "part", options, index=default_idx,
+                "part", LABELS, index=default_idx, format_func=fmt_label,
                 key=f"sel_{path}", label_visibility="collapsed",
                 on_change=on_label_change,
                 args=(path, row["class"], row.pred_organ, row.confidence, only_unreviewed),
@@ -274,14 +331,16 @@ def review_mode(preds, declared):
     row = preds[preds.path == path].iloc[0]
 
     st.progress((pos + 1) / len(queue), text=f"{pos + 1} / {len(queue)} in this scope")
-    st.caption(f"class: **{row['class']}**   declared affected_part: "
-               f"{sorted(declared.get(row['class'], [])) or 'n/a'}")
+    declared_parts = sorted(declared.get(row["class"], []))
+    st.caption(f"class: **{row['class']}**   declared affected part: "
+               f"{', '.join(fmt_label(p) for p in declared_parts) or 'n/a'}")
 
     st.image(image_url(path), use_container_width=True)
 
-    pred_label = row.pred_affected_part or row.pred_organ
-    st.markdown(f"### Predicted: `{pred_label}`  (confidence {float(row.confidence):.2f}, "
-                f"2nd choice: `{row.second_organ}` {float(row.second_confidence):.2f})")
+    pred_label = predicted_label(row)
+    st.markdown(f"### Predicted: `{fmt_label(pred_label)}`  "
+                f"(confidence {float(row.confidence):.2f}, "
+                f"2nd choice: `{fmt_label(row.second_organ)}` {float(row.second_confidence):.2f})")
 
     def commit(label):
         save_one(path, row["class"], row.pred_organ, row.confidence, label)
@@ -289,14 +348,18 @@ def review_mode(preds, declared):
         st.session_state.pos = min(pos + 1, len(queue))
         st.rerun()
 
-    if st.button(f"Correct — it is '{pred_label}'", type="primary", use_container_width=True):
-        commit(pred_label if pred_label else "not_plant_other")
+    if st.button(f"Correct — it is '{DISPLAY.get(pred_label, pred_label)}'",
+                 type="primary", use_container_width=True):
+        commit(pred_label if pred_label in LABELS else DEFAULT_LABEL)
 
     st.write("Wrong — set the correct part:")
-    cols = st.columns(4)
-    for i, label in enumerate(LABELS):
-        if cols[i % 4].button(label, use_container_width=True):
-            commit(label)
+    for group, parts in TAXONOMY.items():
+        if len(parts) > 1:
+            st.caption(group)
+        cols = st.columns(max(len(parts), 1))
+        for col, label in zip(cols, parts):
+            if col.button(DISPLAY[label], key=f"btn_{label}", use_container_width=True):
+                commit(label)
 
     nav1, nav2 = st.columns(2)
     if nav1.button("Skip", use_container_width=True):
