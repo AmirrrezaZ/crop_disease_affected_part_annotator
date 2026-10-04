@@ -35,7 +35,10 @@ def main():
     url = os.environ.get("DB_URL") or sys.exit("Set DB_URL")
     if url.startswith("postgresql://"):  # use whichever driver is installed
         url = url.replace("postgresql://", "postgresql+psycopg://", 1)
-    engine = create_engine(url, pool_pre_ping=True, connect_args={"prepare_threshold": None})
+    kwargs = {"pool_pre_ping": True}
+    if url.startswith("postgresql+psycopg://"):  # psycopg3 + Supabase pooler: no prepared statements
+        kwargs["connect_args"] = {"prepare_threshold": None}
+    engine = create_engine(url, **kwargs)
     where = "" if args.all else "WHERE label_source = 'human'"
     out = Path(args.out)
     out.mkdir(parents=True, exist_ok=True)
