@@ -41,7 +41,10 @@ def main():
     url = os.environ.get("DB_URL") or sys.exit("Set DB_URL")
     if url.startswith("postgresql://"):
         url = url.replace("postgresql://", "postgresql+psycopg://", 1)
-    engine = create_engine(url, pool_pre_ping=True, connect_args={"prepare_threshold": None})
+    kwargs = {"pool_pre_ping": True}
+    if url.startswith("postgresql+psycopg://"):  # psycopg3 + Supabase pooler: no prepared statements
+        kwargs["connect_args"] = {"prepare_threshold": None}
+    engine = create_engine(url, **kwargs)
 
     guard = "WHERE organ_review.label_source IS DISTINCT FROM 'human'" if args.keep_human else ""
     sql = text(f"""
