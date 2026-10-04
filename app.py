@@ -387,6 +387,7 @@ def gallery_mode(preds, declared):
     scoped = preds_ok[preds_ok.pred_affected_part.map(lambda s: part in parse_labels(s))]
     if cls != "(all classes)":
         scoped = scoped[scoped["class"] == cls]
+    total_in_scope = len(scoped)
     if only_unreviewed:
         reviewed_mask = review.loc[scoped.path, "reviewed"].values
         scoped = scoped[~reviewed_mask]
@@ -410,7 +411,11 @@ def gallery_mode(preds, declared):
 
     paths = st.session_state.get("gallery_paths", [])
     if not paths:
-        st.info("No images match this filter.")
+        if only_unreviewed and total_in_scope:
+            st.info(f"All {total_in_scope:,} matching images are already reviewed. "
+                    "Untick **Only unreviewed** in the sidebar to browse them.")
+        else:
+            st.info("No images match this filter.")
         return
 
     st.caption(f"{len(paths)} images predicted **{fmt_label(part)}**"
