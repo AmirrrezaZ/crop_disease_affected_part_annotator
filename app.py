@@ -378,7 +378,8 @@ def gallery_mode(preds, declared):
 
     sig = (part, cls, only_unreviewed, n, sort_by, conf_lo, conf_hi)
     resample = st.sidebar.button("🔄 New sample")
-    if st.session_state.get("gallery_sig") != sig or resample:
+    if (st.session_state.get("gallery_sig") != sig or resample
+            or st.session_state.pop("resample_gallery", False)):
         if sort_by == "Lowest confidence first":
             sample = scoped.sort_values("_conf").head(n)
         elif sort_by == "Highest confidence first":
@@ -443,6 +444,7 @@ def gallery_mode(preds, declared):
         if todo:
             persist(todo)
             flash(f"Confirmed {len(todo)} images.")
+            st.session_state.resample_gallery = True  # next batch loads by itself
 
     def do_undo():
         touched = undo_organ(review)
@@ -452,6 +454,8 @@ def gallery_mode(preds, declared):
     @st.fragment
     def grid():
         # a fragment: a tap re-runs only this grid, not the sidebar/progress/queries
+        if st.session_state.get("resample_gallery"):
+            st.rerun()
         show_flash()
         undo_n = len(st.session_state.get("undo_organ", []))
         left = sum(not review.loc[p, "reviewed"] for p in st.session_state.gallery_paths)
@@ -745,7 +749,8 @@ def attribute_mode(preds):
 
     sig = (tuple(shown), cls, only_unreviewed, only_gpt, n, group, include_auto)
     resample = st.sidebar.button("🔄 New sample")
-    if st.session_state.get("attr_sig") != sig or resample:
+    if (st.session_state.get("attr_sig") != sig or resample
+            or st.session_state.pop("resample_attr", False)):
         if group == "Group by class" and len(scoped):
             order = scoped.groupby("class").sample(frac=1).reset_index()  # shuffle within class
             classes = order["class"].drop_duplicates().sample(frac=1).tolist()
@@ -833,6 +838,7 @@ def attribute_mode(preds):
             undo += u
             empty += e
         persist(items, undo)
+        st.session_state.resample_attr = True  # next batch loads by itself
         flash(f"Confirmed {len(items)} values" + (f" ({empty} empty skipped)." if empty else "."))
 
     def do_undo():
@@ -849,6 +855,8 @@ def attribute_mode(preds):
     @st.fragment
     def grid():
         # a fragment: a tap re-runs only this grid, not the sidebar/progress/queries
+        if st.session_state.get("resample_attr"):
+            st.rerun()
         show_flash()
         undo_n = len(st.session_state.get("undo_attr", []))
         left = sum(not rows[a].loc[p, "reviewed"] for p in st.session_state.attr_paths
