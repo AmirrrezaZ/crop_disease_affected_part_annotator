@@ -49,6 +49,7 @@ TAXONOMY = {
     "Reproductive": ["flower", "inflorescence", "fruit", "seed_grain"],
     "Storage": ["tuber", "bulb"],
     "Whole plant / Unknown": ["whole_plant_unknown"],
+    "None (healthy)": ["none"],  # healthy crop: no plant part is affected by disease
 }
 LABELS = [p for parts in TAXONOMY.values() for p in parts]
 GROUP_OF = {p: g for g, parts in TAXONOMY.items() for p in parts}
@@ -58,6 +59,7 @@ DISPLAY = {
     "seed_grain": "Seed / Grain",
     "tuber": "Tuber", "bulb": "Bulb",
     "whole_plant_unknown": "Whole plant / Unknown",
+    "none": "None (healthy)",
 }
 DEFAULT_LABEL = "whole_plant_unknown"
 
@@ -86,6 +88,8 @@ def parse_labels(value) -> list:
     if not isinstance(value, str):
         return []
     found = {norm_label(v) for v in value.replace(",", ";").split(";")}
+    if len(found) > 1:
+        found.discard("none")  # 'none' (healthy) only stands alone
     return [lab for lab in LABELS if lab in found]
 
 
@@ -155,6 +159,15 @@ def load_declared():
 
 
 @st.cache_data
+def load_healthy_classes():
+    """Classes of healthy crops (disease_type == healthy): no part is affected -> 'none'."""
+    if not CLASS_ATTRS.exists():
+        return set()
+    df = pd.read_csv(CLASS_ATTRS, dtype=str).fillna("")
+    return set(df.loc[df["disease_type"] == "healthy", "class"])
+
+
+@st.cache_data
 def load_class_labels():
     """class -> part chosen by the GPT 5-sample vote (scripts/predict_class_parts.py).
     These replace the per-image CLIP prediction for the whole class, because
@@ -189,6 +202,9 @@ def load_predictions():
     df["gpt_label"] = class_override.notna() | image_override.notna()
     df["pred_affected_part"] = (image_override.fillna(class_override)
                                 .fillna(df["pred_affected_part"]))
+    healthy = df["class"].isin(load_healthy_classes())  # beats every other source
+    df.loc[healthy, "pred_affected_part"] = "none"
+    df.loc[healthy, "gpt_label"] = False
     return df
 
 
@@ -199,7 +215,10 @@ def predicted_label(row) -> str:
 def flagged_classes(preds, declared):
     """Classes whose majority-predicted organ isn't in the declared affected_part set."""
     flagged = []
+    healthy = load_healthy_classes()
     for cls, sub in preds[preds.pred_organ != ""].groupby("class"):
+        if cls in healthy:
+            continue
         majority_part = sub.model_part.mode()
         if majority_part.empty:
             continue

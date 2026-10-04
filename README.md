@@ -79,6 +79,18 @@ and take priority over the class-level vote in the app. A label with several
 parts is stored `;`-joined in `organ_review.final_label`, and the gallery /
 review screens let you select more than one part per image.
 
+## Healthy crops
+
+Classes with `disease_type == healthy` (celery leaf, corn leaf, coffee leaf, ...) have
+no diseased part, so their organ label is `none` ("None (healthy)"). The app predicts
+`none` for them and leaves them out of the flagged queue; to write it to the database
+(marked reviewed, `label_source = 'class_rule'`):
+
+```bash
+DB_URL=... python scripts/set_healthy_organ.py            # dry run
+DB_URL=... python scripts/set_healthy_organ.py --apply    # add --keep-human to spare human edits
+```
+
 ## Where annotations are saved, and how to pull them
 
 Every change is written straight to the Supabase Postgres database (`DB_URL`):
