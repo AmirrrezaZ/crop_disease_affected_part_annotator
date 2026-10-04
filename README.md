@@ -79,6 +79,23 @@ and take priority over the class-level vote in the app. A label with several
 parts is stored `;`-joined in `organ_review.final_label`, and the gallery /
 review screens let you select more than one part per image.
 
+## Where annotations are saved, and how to pull them
+
+Every change is written straight to the Supabase Postgres database (`DB_URL`):
+`organ_review` (affected part) and `attribute_review` (color / texture / shape /
+pattern). Human edits have `label_source = 'human'`, `reviewed = TRUE`. In the
+Attributes mode you can also type your own value (Enter to add it); it is stored
+lower-cased with underscores and offered for later images.
+
+```bash
+pip install pandas sqlalchemy "psycopg[binary]"
+DB_URL="postgresql+psycopg://..." python scripts/export_annotations.py        # human rows only -> exports/*.csv
+DB_URL=... python scripts/export_annotations.py --all                         # everything
+```
+
+Use the transaction-pooler `DB_URL`; the app disables psycopg3 prepared
+statements for it (otherwise `prepared statement "_pg3_0" does not exist`).
+
 ## Symptom attributes (color, texture, shape, pattern)
 
 Besides *affected part*, each image also has `color`, `texture`, `shape` and

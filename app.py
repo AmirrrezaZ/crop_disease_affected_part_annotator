@@ -24,12 +24,15 @@ Run locally against the same DB/bucket for testing:
 Deployed: pushed to GitHub, connected at share.streamlit.io, with
 IMAGE_PUBLIC_BASE and DB_URL set in that app's Secrets. See README.md.
 """
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 
 import pandas as pd
 import streamlit as st
 from sqlalchemy import text
+from sqlalchemy.engine import make_url
+from sqlalchemy.exc import DBAPIError, InterfaceError, OperationalError, ProgrammingError
 
 ROOT = Path(__file__).resolve().parent
 DATA = ROOT / "data"
@@ -107,9 +110,38 @@ def image_url(path: str) -> str:
     return f"{IMAGE_PUBLIC_BASE}/{path}"
 
 
+def engine_kwargs(db_url: str) -> dict:
+    """create_engine kwargs for this DB_URL's driver. Supabase's transaction
+    pooler (port 6543) hands every statement to a different backend, so
+    psycopg3's server-side prepared statements ("_pg3_0 does not exist") must
+    be off. pre_ping/recycle drop connections the pooler has silently closed."""
+    kwargs = {"pool_pre_ping": True, "pool_recycle": 300}
+    if make_url(db_url).get_driver_name() == "psycopg":  # psycopg3 (not psycopg2)
+        kwargs["connect_args"] = {"prepare_threshold": None}
+    return kwargs
+
+
 @st.cache_resource
 def get_conn():
-    return st.connection("organ_db", type="sql", url=st.secrets["DB_URL"])
+    db_url = st.secrets["DB_URL"]
+    return st.connection("organ_db", type="sql", url=db_url, **engine_kwargs(db_url))
+
+
+def run_write(sql: str, params: dict):
+    """Execute one write; on a dropped/stale pooled connection, throw the pool
+    away and retry (a few times) instead of surfacing the error to the user."""
+    for attempt in range(3):
+        conn = get_conn()
+        try:
+            with conn.session as s:
+                s.execute(text(sql), params=params)
+                s.commit()
+            return
+        except (OperationalError, InterfaceError, ProgrammingError, DBAPIError):
+            conn.engine.dispose()
+            if attempt == 2:
+                raise
+            time.sleep(0.5 * (attempt + 1))
 
 
 @st.cache_data
@@ -208,23 +240,16 @@ def load_review_state(_preds):
 
 
 def save_one(path, cls, pred_organ, confidence, final_label):
-    conn = get_conn()
-    with conn.session as s:
-        s.execute(
-            text("""
-                INSERT INTO organ_review (path, class, pred_organ, confidence, final_label, reviewed, reviewed_at, label_source)
-                VALUES (:path, :cls, :pred_organ, :confidence, :final_label, TRUE, :reviewed_at, 'human')
-                ON CONFLICT (path) DO UPDATE SET
-                    final_label = EXCLUDED.final_label,
-                    reviewed = TRUE,
-                    reviewed_at = EXCLUDED.reviewed_at,
-                    label_source = 'human'
-            """),
-            params={"path": path, "cls": cls, "pred_organ": pred_organ, "confidence": confidence,
-                    "final_label": final_label,
-                    "reviewed_at": datetime.now(timezone.utc)},
-        )
-        s.commit()
+    run_write("""
+        INSERT INTO organ_review (path, class, pred_organ, confidence, final_label, reviewed, reviewed_at, label_source)
+        VALUES (:path, :cls, :pred_organ, :confidence, :final_label, TRUE, :reviewed_at, 'human')
+        ON CONFLICT (path) DO UPDATE SET
+            final_label = EXCLUDED.final_label,
+            reviewed = TRUE,
+            reviewed_at = EXCLUDED.reviewed_at,
+            label_source = 'human'
+    """, {"path": path, "cls": cls, "pred_organ": pred_organ, "confidence": confidence,
+          "final_label": final_label, "reviewed_at": datetime.now(timezone.utc)})
 
 
 def progress_panel(preds, review):
@@ -480,20 +505,25 @@ def fmt_attr(value: str) -> str:
     return value.replace("_", " ")
 
 
-def parse_attr(value, options) -> list:
-    """'brown;tan' -> ['brown', 'tan'], keeping only entries present in options."""
+def clean_attr(value) -> str:
+    """Typed-in custom value -> vocabulary style: 'Dark  Brown;' -> 'dark_brown'."""
+    return "_".join(str(value).replace(";", " ").replace(",", " ").lower().split())
+
+
+def split_attr(value) -> list:
     if not isinstance(value, str):
         return []
-    found = {v.strip() for v in value.split(";") if v.strip()}
-    return [o for o in options if o in found]
+    return [v for v in (clean_attr(x) for x in value.split(";")) if v]
 
 
 def join_attr(values, vocab) -> str:
-    """Canonical (vocab-ordered) ';'-joined value; 'none' only stands alone."""
-    chosen = [v for v in vocab if v in set(values)]
-    if not chosen:
-        return NONE_VALUE if NONE_VALUE in values else ""
-    return ";".join(chosen)
+    """Canonical ';'-joined value: vocab values in vocab order, then custom
+    (typed-in) values in the order given; 'none' only stands alone."""
+    vals = list(dict.fromkeys(v for v in (clean_attr(x) for x in values) if v))
+    if len(vals) > 1 and NONE_VALUE in vals:
+        vals.remove(NONE_VALUE)
+    known = [v for v in vocab if v in vals]
+    return ";".join(known + [v for v in vals if v not in vocab])
 
 
 def load_attribute_rows(attribute):
@@ -510,20 +540,14 @@ def load_attribute_rows(attribute):
 
 
 def save_attribute(path, attribute, cls, value):
-    conn = get_conn()
-    with conn.session as s:
-        s.execute(
-            text("""
-                INSERT INTO attribute_review (path, attribute, class, value, reviewed, reviewed_at, label_source)
-                VALUES (:path, :attribute, :cls, :value, TRUE, :reviewed_at, 'human')
-                ON CONFLICT (path, attribute) DO UPDATE SET
-                    value = EXCLUDED.value, reviewed = TRUE,
-                    reviewed_at = EXCLUDED.reviewed_at, label_source = 'human'
-            """),
-            params={"path": path, "attribute": attribute, "cls": cls, "value": value,
-                    "reviewed_at": datetime.now(timezone.utc)},
-        )
-        s.commit()
+    run_write("""
+        INSERT INTO attribute_review (path, attribute, class, value, reviewed, reviewed_at, label_source)
+        VALUES (:path, :attribute, :cls, :value, TRUE, :reviewed_at, 'human')
+        ON CONFLICT (path, attribute) DO UPDATE SET
+            value = EXCLUDED.value, reviewed = TRUE,
+            reviewed_at = EXCLUDED.reviewed_at, label_source = 'human'
+    """, {"path": path, "attribute": attribute, "cls": cls, "value": value,
+          "reviewed_at": datetime.now(timezone.utc)})
 
 
 def attribute_progress():
@@ -588,16 +612,19 @@ def attribute_mode(preds):
         st.success("Nothing left in this selection." if only_unreviewed else "No images match.")
         return
 
-    def options_for(cls_val):
+    custom_seen = sorted({v for val in rows["value"] for v in split_attr(val)}
+                         - set(vocab[attribute]) - {NONE_VALUE})
+
+    def options_for(cls_val, current=()):
         base = vocab[attribute] if show_all else declared.get(cls_val, []) or vocab[attribute]
-        return list(base) + [NONE_VALUE]
+        extra = [v for v in list(custom_seen) + list(current) if v not in base]
+        return list(dict.fromkeys(list(base) + [NONE_VALUE] + extra))
 
     def wkey(path):
         return f"attr_{attribute}_{int(show_all)}_{path}"
 
     def default_for(path):
-        r = rows.loc[path]
-        return parse_attr(r["value"], options_for(r["class"]))
+        return split_attr(rows.loc[path, "value"])
 
     def commit(path):
         r = rows.loc[path]
@@ -608,12 +635,15 @@ def attribute_mode(preds):
         value = join_attr(picked, vocab[attribute])
         save_attribute(path, attribute, r["class"], value)
         rows.loc[path, ["value", "reviewed", "label_source"]] = [value, True, "human"]
-        if only_unreviewed and path in st.session_state.attr_paths:
-            st.session_state.attr_paths.remove(path)
+        st.session_state[wkey(path)] = value.split(";")  # show typed values in cleaned form
+        # No removal from the grid here: the image stays on screen (marked
+        # reviewed) so you can keep editing it; it drops on the next sample/filter change.
         return True
 
     st.caption(f"{len(paths)} images — choose every **{attribute}** value that is visibly part "
-               "of the symptom; it saves immediately.")
+               "of the symptom; it saves immediately (the image counts as reviewed and stays "
+               "here until the next sample, so you can keep editing). Type a new value and press "
+               "Enter to add your own.")
     if st.button("✓ Confirm all shown (that have a selection)", use_container_width=True):
         for p in list(paths):
             if st.session_state.get(wkey(p), default_for(p)):  # skip images with nothing chosen
@@ -634,9 +664,9 @@ def attribute_mode(preds):
             st.caption(f"{r['class']} — {status}")
             st.caption("class values: " + (", ".join(fmt_attr(v) for v in declared.get(r["class"], [])) or "—"))
             st.multiselect(
-                attribute, options_for(r["class"]), default=default_for(path),
+                attribute, options_for(r["class"], default_for(path)), default=default_for(path),
                 format_func=fmt_attr, key=wkey(path), label_visibility="collapsed",
-                on_change=commit, args=(path,),
+                accept_new_options=True, on_change=commit, args=(path,),
             )
             if not r["reviewed"] and st.button("✓ Confirm", key=f"attrok_{attribute}_{path}",
                                                use_container_width=True):
