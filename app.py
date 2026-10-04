@@ -239,17 +239,75 @@ def load_review_state(_preds):
     return review
 
 
+ORGAN_UPSERT = """
+    INSERT INTO organ_review (path, class, pred_organ, confidence, final_label, reviewed, reviewed_at, label_source)
+    VALUES (:path, :cls, :pred_organ, :confidence, :final_label, TRUE, :reviewed_at, 'human')
+    ON CONFLICT (path) DO UPDATE SET
+        final_label = EXCLUDED.final_label,
+        reviewed = TRUE,
+        reviewed_at = EXCLUDED.reviewed_at,
+        label_source = 'human'
+"""
+
+
+def save_many(items):
+    """items: dicts with path, cls, pred_organ, confidence, final_label. One round trip."""
+    now = datetime.now(timezone.utc)
+    run_write(ORGAN_UPSERT, [{**i, "reviewed_at": now} for i in items])
+
+
 def save_one(path, cls, pred_organ, confidence, final_label):
+    save_many([{"path": path, "cls": cls, "pred_organ": pred_organ,
+                "confidence": confidence, "final_label": final_label}])
+
+
+def restore_organ(entries):
+    """entries: (path, final_label, reviewed, label_source) snapshots taken before a save."""
     run_write("""
-        INSERT INTO organ_review (path, class, pred_organ, confidence, final_label, reviewed, reviewed_at, label_source)
-        VALUES (:path, :cls, :pred_organ, :confidence, :final_label, TRUE, :reviewed_at, 'human')
-        ON CONFLICT (path) DO UPDATE SET
-            final_label = EXCLUDED.final_label,
-            reviewed = TRUE,
-            reviewed_at = EXCLUDED.reviewed_at,
-            label_source = 'human'
-    """, {"path": path, "cls": cls, "pred_organ": pred_organ, "confidence": confidence,
-          "final_label": final_label, "reviewed_at": datetime.now(timezone.utc)})
+        UPDATE organ_review SET final_label = :fl, reviewed = :rv, label_source = :src,
+            reviewed_at = CASE WHEN :rv THEN reviewed_at ELSE NULL END
+        WHERE path = :path
+    """, [{"path": p, "fl": fl, "rv": rv, "src": src} for p, fl, rv, src in entries])
+
+
+def push_undo(stack, entries):
+    """Undo history lives in session_state (per annotator session); last 20 actions."""
+    hist = st.session_state.setdefault(stack, [])
+    hist.append(entries)
+    del hist[:-20]
+
+
+def flash(msg: str):
+    """Queue a toast from a callback; grids show it from their body (st.toast inside a
+    callback of a fragment is not supported)."""
+    st.session_state["flash"] = msg
+
+
+def show_flash():
+    msg = st.session_state.pop("flash", None)
+    if msg:
+        st.toast(msg)
+
+
+def organ_snapshot(review, path):
+    src = review["label_source"].get(path) if "label_source" in review.columns else None
+    return (path, review.at[path, "final_label"], bool(review.at[path, "reviewed"]),
+            None if pd.isna(src) else src)
+
+
+def undo_organ(review):
+    """Revert the last organ save(s) in the DB and in memory. Returns the paths touched."""
+    hist = st.session_state.get("undo_organ", [])
+    if not hist:
+        return []
+    entries = hist.pop()
+    restore_organ(entries)
+    for p, fl, rv, src in entries:
+        review.loc[p, ["final_label", "reviewed"]] = [fl, rv]
+        if "label_source" in review.columns:
+            review.loc[p, "label_source"] = src
+        st.session_state.pop(f"sel_{p}", None)
+    return [e[0] for e in entries]
 
 
 def progress_panel(preds, review):
@@ -302,7 +360,10 @@ def gallery_mode(preds, declared):
     n = st.sidebar.slider("How many images", 4, 48, 12, step=4)
     cols_n = st.sidebar.slider("Grid columns", 1, 6, 2)
     sort_by = st.sidebar.radio(
-        "Sort", ["Random sample", "Lowest confidence first", "Highest confidence first"])
+        "Sort", ["Highest confidence first", "Lowest confidence first", "Random sample"],
+        help="Highest first puts the near-certain predictions together: scan them and fix only "
+             "the odd ones, then confirm the rest in one tap.")
+    conf_lo, conf_hi = st.sidebar.slider("Confidence range", 0.0, 1.0, (0.0, 1.0), step=0.05)
 
     scoped = preds_ok[preds_ok.pred_affected_part.map(lambda s: part in parse_labels(s))]
     if cls != "(all classes)":
@@ -311,10 +372,11 @@ def gallery_mode(preds, declared):
         reviewed_mask = review.loc[scoped.path, "reviewed"].values
         scoped = scoped[~reviewed_mask]
     scoped = scoped.assign(_conf=scoped.confidence.astype(float))
+    scoped = scoped[(scoped._conf >= conf_lo) & (scoped._conf <= conf_hi)]
 
     st.sidebar.metric("Matching images", len(scoped))
 
-    sig = (part, cls, only_unreviewed, n, sort_by)
+    sig = (part, cls, only_unreviewed, n, sort_by, conf_lo, conf_hi)
     resample = st.sidebar.button("🔄 New sample")
     if st.session_state.get("gallery_sig") != sig or resample:
         if sort_by == "Lowest confidence first":
@@ -335,38 +397,86 @@ def gallery_mode(preds, declared):
                + (f" for class **{cls}**" if cls != "(all classes)" else "")
                + " — pick the right part below and it saves immediately.")
 
-    def on_label_change(path, cls_val, pred_organ, confidence, drop_when_reviewed):
+    paths = st.session_state.get("gallery_paths", [])
+    if not paths:
+        st.info("No images match this filter.")
+        return
+
+    st.caption(f"{len(paths)} images predicted **{fmt_label(part)}**"
+               + (f" for class **{cls}**" if cls != "(all classes)" else "")
+               + " — fix only the wrong ones (saves immediately), then confirm the rest in one tap.")
+
+    def selection(path, row):
+        """Parts currently chosen for this image (widget state, else saved/predicted label)."""
+        picked = st.session_state.get(f"sel_{path}")
+        if picked is None:
+            is_rev = bool(review.loc[path, "reviewed"])
+            current = review.loc[path, "final_label"] if is_rev else predicted_label(row)
+            picked = parse_labels(current) or [DEFAULT_LABEL]
+        return picked
+
+    def persist(rows_):
+        """rows_: (path, class, pred_organ, confidence, label). One DB call + one undo step.
+        Images stay in the grid (marked reviewed) until the next sample."""
+        push_undo("undo_organ", [organ_snapshot(review, r[0]) for r in rows_])
+        save_many([{"path": p, "cls": c, "pred_organ": o, "confidence": cf, "final_label": lab}
+                   for p, c, o, cf, lab in rows_])
+        for p, _, _, _, lab in rows_:
+            review.loc[p, ["final_label", "reviewed"]] = [lab, True]
+            st.session_state[f"sel_{p}"] = parse_labels(lab)
+
+    def on_label_change(path, row):
         picked = st.session_state[f"sel_{path}"]
         if not picked:  # nothing selected: keep the previous label
-            st.toast("Pick at least one part.")
+            flash("Pick at least one part.")
             return
-        sel = join_labels(picked)
-        save_one(path, cls_val, pred_organ, confidence, sel)
-        review.loc[path, ["final_label", "reviewed"]] = [sel, True]
-        if drop_when_reviewed and path in st.session_state.gallery_paths:
-            st.session_state.gallery_paths.remove(path)
+        persist([(path, row["class"], row.pred_organ, row.confidence, join_labels(picked))])
 
-    cols = st.columns(cols_n)
-    for i, path in enumerate(paths):
-        row = preds[preds.path == path].iloc[0]
-        is_reviewed = bool(review.loc[path, "reviewed"])
-        current_label = review.loc[path, "final_label"] if is_reviewed else predicted_label(row)
-        with cols[i % cols_n]:
-            st.image(image_url(path), use_container_width=True)
-            status = "✓ reviewed" if is_reviewed else f"conf {float(row.confidence):.2f}"
-            st.caption(f"{row['class']} — {status}")
-            st.multiselect(
-                "part(s)", LABELS, default=parse_labels(current_label) or [DEFAULT_LABEL],
-                format_func=fmt_label,
-                key=f"sel_{path}", label_visibility="collapsed",
-                help="Select every part that visibly shows the disease.",
-                on_change=on_label_change,
-                args=(path, row["class"], row.pred_organ, row.confidence, only_unreviewed),
-            )
-            if not is_reviewed and st.button("✓ Confirm as-is", key=f"confirm_{path}",
-                                              use_container_width=True):
-                on_label_change(path, row["class"], row.pred_organ, row.confidence, only_unreviewed)
-                st.rerun()
+    def confirm_all():
+        todo = []
+        for pth in st.session_state.gallery_paths:
+            if not review.loc[pth, "reviewed"]:
+                row = preds[preds.path == pth].iloc[0]
+                lab = join_labels(selection(pth, row))
+                if lab:
+                    todo.append((pth, row["class"], row.pred_organ, row.confidence, lab))
+        if todo:
+            persist(todo)
+            flash(f"Confirmed {len(todo)} images.")
+
+    def do_undo():
+        touched = undo_organ(review)
+        if touched:
+            flash(f"Undid {len(touched)} image(s).")
+
+    @st.fragment
+    def grid():
+        # a fragment: a tap re-runs only this grid, not the sidebar/progress/queries
+        show_flash()
+        undo_n = len(st.session_state.get("undo_organ", []))
+        left = sum(not review.loc[p, "reviewed"] for p in st.session_state.gallery_paths)
+        b1, b2 = st.columns([3, 2])
+        b1.button(f"✓ Confirm all {left} remaining as shown", on_click=confirm_all,
+                  disabled=left == 0, type="primary", use_container_width=True)
+        b2.button(f"↩ Undo ({undo_n})", on_click=do_undo, disabled=undo_n == 0,
+                  use_container_width=True)
+        cols = st.columns(cols_n)
+        for i, path in enumerate(st.session_state.gallery_paths):
+            row = preds[preds.path == path].iloc[0]
+            is_reviewed = bool(review.loc[path, "reviewed"])
+            with cols[i % cols_n]:
+                st.image(image_url(path), use_container_width=True)
+                status = "✓ reviewed" if is_reviewed else f"conf {float(row.confidence):.2f}"
+                st.caption(f"{row['class']} — {status}")
+                kw = {} if f"sel_{path}" in st.session_state else {"default": selection(path, row)}
+                st.multiselect(
+                    "part(s)", LABELS, format_func=fmt_label,
+                    key=f"sel_{path}", label_visibility="collapsed",
+                    help="Select every part that visibly shows the disease.",
+                    on_change=on_label_change, args=(path, row), **kw,
+                )
+
+    grid()
 
 
 def review_mode(preds, declared):
@@ -432,6 +542,9 @@ def review_mode(preds, declared):
 
     if "pos" not in st.session_state or st.session_state.pos >= len(queue):
         st.session_state.pos = 0
+    jump = st.session_state.pop("jump_path", None)
+    if jump in queue:
+        st.session_state.pos = queue.index(jump)
     pos = st.session_state.pos
     path = queue[pos]
     row = preds[preds.path == path].iloc[0]
@@ -449,6 +562,7 @@ def review_mode(preds, declared):
                 f"2nd choice: `{fmt_label(row.second_organ)}` {float(row.second_confidence):.2f})")
 
     def commit(label):
+        push_undo("undo_organ", [organ_snapshot(review, path)])
         save_one(path, row["class"], row.pred_organ, row.confidence, label)
         review.loc[path, ["final_label", "reviewed"]] = [label, True]
         st.session_state.pos = min(pos + 1, len(queue))
@@ -473,6 +587,13 @@ def review_mode(preds, declared):
         help="Select every part that visibly shows the disease, then save.")
     if st.button("Save selected parts", disabled=not picked, use_container_width=True):
         commit(join_labels(picked))
+
+    undo_n = len(st.session_state.get("undo_organ", []))
+    if st.button(f"↩ Undo last ({undo_n})", disabled=undo_n == 0, use_container_width=True):
+        touched = undo_organ(review)
+        if touched:
+            st.session_state.jump_path = touched[0]  # show the image again
+        st.rerun()
 
     nav1, nav2 = st.columns(2)
     if nav1.button("Skip", use_container_width=True):
@@ -539,15 +660,29 @@ def load_attribute_rows(attribute):
     return st.session_state[key]
 
 
-def save_attribute(path, attribute, cls, value):
+ATTR_UPSERT = """
+    INSERT INTO attribute_review (path, attribute, class, value, reviewed, reviewed_at, label_source)
+    VALUES (:path, :attribute, :cls, :value, TRUE, :reviewed_at, 'human')
+    ON CONFLICT (path, attribute) DO UPDATE SET
+        value = EXCLUDED.value, reviewed = TRUE,
+        reviewed_at = EXCLUDED.reviewed_at, label_source = 'human'
+"""
+
+
+def save_attributes(items):
+    """items: dicts with path, attribute, cls, value. One round trip for any number."""
+    now = datetime.now(timezone.utc)
+    run_write(ATTR_UPSERT, [{**i, "reviewed_at": now} for i in items])
+
+
+def restore_attributes(entries):
+    """entries: (path, attribute, value, reviewed, label_source) snapshots from before a save."""
     run_write("""
-        INSERT INTO attribute_review (path, attribute, class, value, reviewed, reviewed_at, label_source)
-        VALUES (:path, :attribute, :cls, :value, TRUE, :reviewed_at, 'human')
-        ON CONFLICT (path, attribute) DO UPDATE SET
-            value = EXCLUDED.value, reviewed = TRUE,
-            reviewed_at = EXCLUDED.reviewed_at, label_source = 'human'
-    """, {"path": path, "attribute": attribute, "cls": cls, "value": value,
-          "reviewed_at": datetime.now(timezone.utc)})
+        UPDATE attribute_review SET value = :value, reviewed = :rv, label_source = :src,
+            reviewed_at = CASE WHEN :rv THEN reviewed_at ELSE NULL END
+        WHERE path = :path AND attribute = :attribute
+    """, [{"path": p, "attribute": a, "value": v, "rv": rv, "src": src or None}
+          for p, a, v, rv, src in entries])
 
 
 def attribute_progress():
@@ -572,106 +707,188 @@ def attribute_mode(preds):
     st.title("Symptom attributes")
     vocab, per_class = load_attribute_vocab()
     attribute_progress()
-    st.caption("Single-value classes and healthy classes are already filled in and counted as "
-               "reviewed. Multi-value classes need a per-image choice among **that class's own** "
-               "values (or `none` if the symptom isn't visible).")
+    st.caption("One card per image, all attributes together: tap the values that are visible. "
+               "Every tap saves. Images from single-value / healthy classes are pre-filled.")
 
     st.sidebar.header("Attributes")
-    attribute = st.sidebar.selectbox("Attribute", ATTRIBUTES, format_func=str.title)
-    rows = load_attribute_rows(attribute)
-    declared = per_class[attribute]
-    multi = {c for c, v in declared.items() if len(v) > 1}
+    shown = st.sidebar.multiselect("Attributes to annotate", ATTRIBUTES, default=ATTRIBUTES,
+                                   format_func=str.title) or list(ATTRIBUTES)
+    rows = {a: load_attribute_rows(a) for a in ATTRIBUTES}
+    base = rows[ATTRIBUTES[0]]
 
     include_auto = st.sidebar.checkbox("Include auto-labelled classes", value=False,
                                        help="Single-value / healthy classes (already reviewed).")
-    pool = sorted(rows["class"].unique()) if include_auto else sorted(multi & set(rows["class"]))
+    show_auto = st.sidebar.checkbox("Edit auto-filled attributes too", value=False,
+                                    help="By default only attributes that need a choice get chips.")
+    multi = {c for a in shown for c, v in per_class[a].items() if len(v) > 1}
+    pool = sorted(base["class"].unique()) if include_auto else sorted(multi & set(base["class"]))
     cls = st.sidebar.selectbox("Class", ["(all classes)"] + pool)
     only_unreviewed = st.sidebar.checkbox("Only unreviewed", value=True)
     only_gpt = st.sidebar.checkbox("Only GPT-suggested", value=False)
     show_all = st.sidebar.checkbox("Offer all values (not just the class's)", value=False)
-    n = st.sidebar.slider("How many images", 1, 48, 12)
-    cols_n = st.sidebar.slider("Grid columns", 1, 6, 2)
+    group = st.sidebar.radio("Order", ["Group by class", "Random"],
+                             help="Same-class images side by side share values, so you can "
+                                  "scan them and fix only the exceptions.")
+    n = st.sidebar.slider("How many images", 1, 48, 8)
+    cols_n = st.sidebar.slider("Grid columns", 1, 4, 1)
 
-    scoped = rows[rows["class"].isin(pool)]
+    scoped = base[base["class"].isin(pool)]
     if cls != "(all classes)":
         scoped = scoped[scoped["class"] == cls]
+    reviewed = pd.DataFrame({a: rows[a]["reviewed"] for a in shown}).reindex(scoped.index)
     if only_unreviewed:
-        scoped = scoped[~scoped.reviewed]
+        scoped = scoped[~reviewed.all(axis=1)]
     if only_gpt:
-        scoped = scoped[scoped.label_source == "gpt_image"]
+        gpt = pd.DataFrame({a: rows[a]["label_source"] == "gpt_image" for a in shown})
+        scoped = scoped[gpt.reindex(scoped.index).any(axis=1)]
     st.sidebar.metric("Matching images", len(scoped))
 
-    sig = (attribute, cls, only_unreviewed, only_gpt, n)
+    sig = (tuple(shown), cls, only_unreviewed, only_gpt, n, group, include_auto)
     resample = st.sidebar.button("🔄 New sample")
     if st.session_state.get("attr_sig") != sig or resample:
-        sample = scoped.sample(min(n, len(scoped))) if len(scoped) else scoped
-        st.session_state.attr_paths = sample.index.tolist()
+        if group == "Group by class" and len(scoped):
+            order = scoped.groupby("class").sample(frac=1).reset_index()  # shuffle within class
+            classes = order["class"].drop_duplicates().sample(frac=1).tolist()
+            order["_k"] = order["class"].map({c: i for i, c in enumerate(classes)})
+            sample_paths = order.sort_values("_k", kind="stable")["path"].head(n).tolist()
+        else:
+            sample_paths = scoped.sample(min(n, len(scoped))).index.tolist() if len(scoped) else []
+        st.session_state.attr_paths = sample_paths
         st.session_state.attr_sig = sig
-    paths = st.session_state.get("attr_paths", [])
-    if not paths:
+    if not st.session_state.get("attr_paths"):
         st.success("Nothing left in this selection." if only_unreviewed else "No images match.")
         return
 
-    custom_seen = sorted({v for val in rows["value"] for v in split_attr(val)}
-                         - set(vocab[attribute]) - {NONE_VALUE})
+    def wkey(a, path):
+        return f"attr_{a}_{int(show_all)}_{path}"
 
-    def options_for(cls_val, current=()):
-        base = vocab[attribute] if show_all else declared.get(cls_val, []) or vocab[attribute]
-        extra = [v for v in list(custom_seen) + list(current) if v not in base]
-        return list(dict.fromkeys(list(base) + [NONE_VALUE] + extra))
+    def current(a, path):
+        return st.session_state.get(wkey(a, path)) or split_attr(rows[a].loc[path, "value"])
 
-    def wkey(path):
-        return f"attr_{attribute}_{int(show_all)}_{path}"
+    def options_for(a, cls_val, cur):
+        base_opts = vocab[a] if show_all else per_class[a].get(cls_val, []) or vocab[a]
+        custom = sorted({v for val in rows[a]["value"] for v in split_attr(val)}
+                        - set(vocab[a]) - {NONE_VALUE})
+        extra = [v for v in custom + list(cur) if v not in base_opts]
+        return list(dict.fromkeys(list(base_opts) + [NONE_VALUE] + extra))
 
-    def default_for(path):
-        return split_attr(rows.loc[path, "value"])
+    def editable(path):
+        cls_val = base.loc[path, "class"]
+        return [a for a in shown if show_auto or len(per_class[a].get(cls_val, [])) > 1
+                or not rows[a].loc[path, "reviewed"]]
 
-    def commit(path):
-        r = rows.loc[path]
-        picked = st.session_state.get(wkey(path), default_for(path))
-        if not picked:
-            st.toast("Pick at least one value (or 'none').")
-            return False
-        value = join_attr(picked, vocab[attribute])
-        save_attribute(path, attribute, r["class"], value)
-        rows.loc[path, ["value", "reviewed", "label_source"]] = [value, True, "human"]
-        st.session_state[wkey(path)] = value.split(";")  # show typed values in cleaned form
-        # No removal from the grid here: the image stays on screen (marked
-        # reviewed) so you can keep editing it; it drops on the next sample/filter change.
-        return True
+    def collect(path, attrs):
+        """Changes to write for this image: (items, undo snapshots, #attributes left empty)."""
+        items, undo, empty = [], [], 0
+        for a in attrs:
+            r = rows[a].loc[path]
+            picked = current(a, path)
+            if not picked:
+                empty += 1
+                continue
+            value = join_attr(picked, vocab[a])
+            if r["reviewed"] and value == r["value"]:
+                continue  # nothing new to save
+            items.append({"path": path, "attribute": a, "cls": r["class"], "value": value})
+            undo.append((path, a, r["value"], bool(r["reviewed"]), r["label_source"]))
+        return items, undo, empty
 
-    st.caption(f"{len(paths)} images — choose every **{attribute}** value that is visibly part "
-               "of the symptom; it saves immediately (the image counts as reviewed and stays "
-               "here until the next sample, so you can keep editing). Type a new value and press "
-               "Enter to add your own.")
-    if st.button("✓ Confirm all shown (that have a selection)", use_container_width=True):
-        for p in list(paths):
-            if st.session_state.get(wkey(p), default_for(p)):  # skip images with nothing chosen
-                commit(p)
-        st.rerun()
+    def persist(items, undo):
+        if not items:
+            return
+        save_attributes(items)
+        push_undo("undo_attr", undo)
+        for it in items:
+            a, p = it["attribute"], it["path"]
+            rows[a].loc[p, ["value", "reviewed", "label_source"]] = [it["value"], True, "human"]
+            st.session_state[wkey(a, p)] = it["value"].split(";")  # show cleaned form
 
-    cols = st.columns(cols_n)
-    for i, path in enumerate(paths):
-        r = rows.loc[path]
-        with cols[i % cols_n]:
-            st.image(image_url(path), use_container_width=True)
-            if r["reviewed"]:
-                status = "✓ reviewed"
-            elif r["label_source"] == "gpt_image":
-                status = "GPT suggestion"
-            else:
-                status = "not annotated"
-            st.caption(f"{r['class']} — {status}")
-            st.caption("class values: " + (", ".join(fmt_attr(v) for v in declared.get(r["class"], [])) or "—"))
-            st.multiselect(
-                attribute, options_for(r["class"], default_for(path)), default=default_for(path),
-                format_func=fmt_attr, key=wkey(path), label_visibility="collapsed",
-                accept_new_options=True, on_change=commit, args=(path,),
-            )
-            if not r["reviewed"] and st.button("✓ Confirm", key=f"attrok_{attribute}_{path}",
-                                               use_container_width=True):
-                if commit(path):
-                    st.rerun()
+    def on_tap(path, a):
+        items, undo, empty = collect(path, [a])
+        if empty:
+            flash("Pick at least one value (or 'none').")
+        persist(items, undo)
+
+    def on_own_value(path):
+        attr = st.session_state.get(f"cattr_{path}") or shown[0]
+        v = clean_attr(st.session_state.get(f"cval_{path}", ""))
+        st.session_state[f"cval_{path}"] = ""
+        if not v:
+            return
+        st.session_state[wkey(attr, path)] = list(dict.fromkeys(
+            [x for x in current(attr, path) if x != NONE_VALUE] + [v]))
+        on_tap(path, attr)
+
+    def confirm_card(path):
+        items, undo, empty = collect(path, editable(path))
+        if empty:
+            flash(f"{empty} attribute(s) have nothing selected - skipped.")
+        persist(items, undo)
+
+    def confirm_all():
+        items, undo, empty = [], [], 0
+        for path in st.session_state.attr_paths:
+            i, u, e = collect(path, editable(path))
+            items += i
+            undo += u
+            empty += e
+        persist(items, undo)
+        flash(f"Confirmed {len(items)} values" + (f" ({empty} empty skipped)." if empty else "."))
+
+    def do_undo():
+        hist = st.session_state.get("undo_attr", [])
+        if not hist:
+            return
+        entries = hist.pop()
+        restore_attributes(entries)
+        for p, a, v, rv, src in entries:
+            rows[a].loc[p, ["value", "reviewed", "label_source"]] = [v, rv, src or ""]
+            st.session_state.pop(wkey(a, p), None)
+        flash(f"Undid {len(entries)} change(s).")
+
+    @st.fragment
+    def grid():
+        # a fragment: a tap re-runs only this grid, not the sidebar/progress/queries
+        show_flash()
+        undo_n = len(st.session_state.get("undo_attr", []))
+        left = sum(not rows[a].loc[p, "reviewed"] for p in st.session_state.attr_paths
+                   for a in editable(p))
+        b1, b2 = st.columns([3, 2])
+        b1.button("✓ Confirm all shown as-is", on_click=confirm_all, disabled=left == 0,
+                  type="primary", use_container_width=True,
+                  help="Saves every card's current selection (cards with nothing chosen are skipped).")
+        b2.button(f"↩ Undo ({undo_n})", on_click=do_undo, disabled=undo_n == 0,
+                  use_container_width=True)
+        cols = st.columns(cols_n)
+        for i, path in enumerate(st.session_state.attr_paths):
+            cls_val = base.loc[path, "class"]
+            edit = editable(path)
+            done = sum(bool(rows[a].loc[path, "reviewed"]) for a in shown)
+            gpt = any(rows[a].loc[path, "label_source"] == "gpt_image" and
+                      not rows[a].loc[path, "reviewed"] for a in shown)
+            with cols[i % cols_n]:
+                st.image(image_url(path), use_container_width=True)
+                st.caption(f"{cls_val} — {done}/{len(shown)} reviewed" + (" · GPT suggestion" if gpt else ""))
+                for a in edit:
+                    kw = {} if wkey(a, path) in st.session_state else {
+                        "default": split_attr(rows[a].loc[path, "value"])}
+                    st.pills(a.title(), options_for(a, cls_val, current(a, path)),
+                             selection_mode="multi", format_func=fmt_attr, key=wkey(a, path),
+                             on_change=on_tap, args=(path, a), **kw)
+                auto = [f"{a}: {fmt_attr(rows[a].loc[path, 'value'])}" for a in shown if a not in edit]
+                if auto:
+                    st.caption("auto — " + " · ".join(auto))
+                with st.expander("➕ Own value"):
+                    st.segmented_control("for", edit or shown, key=f"cattr_{path}",
+                                         format_func=str.title, default=(edit or shown)[0],
+                                         label_visibility="collapsed")
+                    st.text_input("new value", key=f"cval_{path}", placeholder="type + Enter",
+                                  label_visibility="collapsed", on_change=on_own_value, args=(path,))
+                if any(not rows[a].loc[path, "reviewed"] for a in edit):
+                    st.button("✓ Confirm", key=f"attrok_{path}", on_click=confirm_card,
+                              args=(path,), use_container_width=True)
+
+    grid()
 
 
 def main():
