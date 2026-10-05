@@ -1,4 +1,5 @@
-"""Deployed version of crop_disease/version1's organ annotation app: review
+"""Crop disease symptom annotator (affected part + color/texture/shape/pattern,
+with optional GPT assistance). Deployed version of crop_disease/version1: review
 and correct the per-image organ predictions from plant_organ's CLIP+MLP
 head (data/organ_predictions.csv), from any device, any time.
 
@@ -107,7 +108,7 @@ def fmt_label(label: str) -> str:
     return DISPLAY.get(lab, label or "—")
 
 
-st.set_page_config(page_title="Organ annotation", layout="centered")
+st.set_page_config(page_title="Crop disease symptom annotator", layout="centered")
 
 
 def image_url(path: str) -> str:
@@ -731,6 +732,71 @@ def attribute_progress():
             col.caption(f"{int(r.total - r.done):,} left")
 
 
+# ---- GPT assistance (optional) ----------------------------------------------
+GLOSSARY = {
+    "color": "colour of the diseased/symptomatic tissue (not the healthy green parts)",
+    "texture": "surface of the lesion (sunken, dry_necrotic, water_soaked, fuzzy_moldy, powdery, "
+               "pustules, raised_corky, sticky_exudate, ...)",
+    "shape": "shape of individual lesions or of the affected organ (angular, circular, "
+             "concentric_target, curled_distorted, elongated, holes, irregular, swollen_galls, wilted, ...)",
+    "pattern": "how symptoms are distributed (coalescing_blotches, halo, interveinal, marginal_tip, "
+               "mosaic_mottle, scattered_spots, stripes_streaks, uniform_general, vein_associated, ...)",
+}
+GPT_PROMPT = """You are helping label a plant-disease image dataset.
+The image comes from the disease class: "{cls}".
+For each attribute, choose EVERY value visibly present in this photo.
+Prefer the listed values. If none describes what you see, you may add your own short
+snake_case label (e.g. "purple_brown"). Use "none" alone only if the attribute cannot be seen.
+
+{block}
+
+Judge from the image itself; the class name is only context. Reply with JSON only:
+{{{keys}, "reason": "<max 15 words>"}}"""
+
+
+def gpt_settings():
+    """API key lives in Streamlit secrets (never in the repo). Fallback: a key the
+    user pastes in the sidebar, kept only in this browser session."""
+    key = (st.secrets.get("AVALAI_API_KEY") or st.secrets.get("OPENAI_API_KEY")
+           or st.session_state.get("user_api_key", ""))
+    return {
+        "key": key,
+        "base_url": st.secrets.get("AVALAI_BASE_URL", "https://api.avalai.ir/v1") if st.secrets.get("AVALAI_API_KEY")
+        else st.secrets.get("OPENAI_BASE_URL", None),
+        "model": st.secrets.get("GPT_MODEL", "gpt-5-mini"),
+    }
+
+
+def gpt_suggest(path, cls_val, attrs, allowed):
+    """-> {attribute: [values]}; may include values outside `allowed`."""
+    import json
+    import re
+    from openai import OpenAI
+    cfg = gpt_settings()
+    if not cfg["key"]:
+        raise RuntimeError("No API key configured.")
+    client = OpenAI(api_key=cfg["key"], base_url=cfg["base_url"], timeout=90)
+    block = "\n".join(f"- {a} ({GLOSSARY[a]}): allowed values: {', '.join(allowed[a])}, none" for a in attrs)
+    keys = ", ".join(f'"{a}": ["<value>", ...]' for a in attrs)
+    resp = client.responses.create(
+        model=cfg["model"], reasoning={"effort": "low"},
+        input=[{"role": "user", "content": [
+            {"type": "input_text", "text": GPT_PROMPT.format(cls=cls_val, block=block, keys=keys)},
+            {"type": "input_image", "image_url": image_url(path)}]}])
+    m = re.search(r"\{.*\}", resp.output_text or "", re.S)
+    if not m:
+        raise ValueError("GPT returned no JSON.")
+    obj = json.loads(m.group(0))
+    out = {}
+    for a in attrs:
+        raw = obj.get(a)
+        raw = [raw] if isinstance(raw, str) else (raw or [])
+        vals = [v for v in (clean_attr(x) for x in raw) if v]
+        if vals:
+            out[a] = vals
+    return out
+
+
 def attribute_mode(preds):
     st.title("Symptom attributes")
     vocab, per_class = load_attribute_vocab()
@@ -743,6 +809,14 @@ def attribute_mode(preds):
                                    format_func=str.title) or list(ATTRIBUTES)
     rows = {a: load_attribute_rows(a) for a in ATTRIBUTES}
     base = rows[ATTRIBUTES[0]]
+
+    st.sidebar.subheader("🤖 GPT help")
+    if st.secrets.get("AVALAI_API_KEY") or st.secrets.get("OPENAI_API_KEY"):
+        st.sidebar.caption("GPT key configured on the server.")
+    else:
+        st.sidebar.text_input("Your API key (this session only)", type="password", key="user_api_key",
+                              help="Not stored anywhere. App owners should set AVALAI_API_KEY "
+                                   "in Settings -> Secrets instead.")
 
     include_auto = st.sidebar.checkbox("Include auto-labelled classes", value=False,
                                        help="Single-value / healthy classes (already reviewed).")
@@ -848,6 +922,23 @@ def attribute_mode(preds):
             [x for x in current(attr, path) if x != NONE_VALUE] + [v]))
         on_tap(path, attr)
 
+    def ask_gpt(path):
+        cls_val = base.loc[path, "class"]
+        attrs = editable(path)
+        allowed = {a: (vocab[a] if show_all else per_class[a].get(cls_val, []) or vocab[a]) for a in attrs}
+        try:
+            got = gpt_suggest(path, cls_val, attrs, allowed)
+        except Exception as e:
+            flash(f"GPT failed: {str(e)[:150]}")
+            return
+        for a, vals in got.items():  # fills the chips; a person still confirms
+            st.session_state[wkey(a, path)] = vals
+        flash(f"GPT suggested values for {len(got)} attribute(s) - check them, then Confirm.")
+
+    def ask_gpt_all():
+        for path in st.session_state.attr_paths:
+            ask_gpt(path)
+
     def confirm_card(path):
         items, undo, empty = collect(path, editable(path))
         if empty:
@@ -891,6 +982,11 @@ def attribute_mode(preds):
                   help="Saves every card's current selection (cards with nothing chosen are skipped).")
         b2.button(f"↩ Undo ({undo_n})", on_click=do_undo, disabled=undo_n == 0,
                   use_container_width=True)
+        have_key = bool(gpt_settings()["key"])
+        st.button("🤖 Ask GPT for all shown", on_click=ask_gpt_all, disabled=not have_key,
+                  use_container_width=True,
+                  help="Fills the chips with GPT's suggestion (it may add its own labels). "
+                       "Nothing is saved until you Confirm." if have_key else "Add an API key in the sidebar.")
         cols = st.columns(cols_n)
         for i, path in enumerate(st.session_state.attr_paths):
             cls_val = base.loc[path, "class"]
@@ -916,6 +1012,8 @@ def attribute_mode(preds):
                                          label_visibility="collapsed")
                     st.text_input("new value", key=f"cval_{path}", placeholder="type + Enter",
                                   label_visibility="collapsed", on_change=on_own_value, args=(path,))
+                st.button("🤖 Ask GPT", key=f"gpt_{path}", on_click=ask_gpt, args=(path,),
+                          disabled=not have_key, use_container_width=True)
                 if any(not rows[a].loc[path, "reviewed"] for a in edit):
                     st.button("✓ Confirm", key=f"attrok_{path}", on_click=confirm_card,
                               args=(path,), use_container_width=True)
