@@ -780,8 +780,11 @@ def gpt_suggest(path, cls_val, attrs, allowed):
     # send the image bytes ourselves (like the labelling script) rather than a URL the
     # API host would have to fetch from Supabase -- that fetch is a common cause of hangs
     import base64
+    import urllib.parse
     import urllib.request
-    with urllib.request.urlopen(image_url(path), timeout=15) as r:
+    # paths contain spaces etc. -> percent-encode (urllib rejects raw spaces)
+    url = f"{IMAGE_PUBLIC_BASE}/{urllib.parse.quote(path)}"
+    with urllib.request.urlopen(url, timeout=15) as r:
         b64 = base64.b64encode(r.read()).decode()
     block = "\n".join(f"- {a} ({GLOSSARY[a]}): allowed values: {', '.join(allowed[a])}, none" for a in attrs)
     keys = ", ".join(f'"{a}": ["<value>", ...]' for a in attrs)
