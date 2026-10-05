@@ -3,7 +3,7 @@
 A small web app for annotating **disease symptoms** in a plant-disease photo
 dataset: the **affected part** (leaf, stem, fruit, flower, root, seed/grain,
 tuber, bulb, or whole plant) and the symptom attributes **color, texture,
-shape and pattern** — optionally with GPT suggestions.
+shape and pattern**.
 
 ## 🌐 Live Web App
 
@@ -130,21 +130,6 @@ The app's **Attributes** mode shows one multiselect per image, limited to the
 class's own values (plus `none`), saves on change, and has a progress bar per
 attribute. Suggestions from GPT appear pre-filled with a "GPT suggestion" badge
 and still count as *unreviewed* until a person confirms them.
-
-### GPT-assisted annotation (Attributes mode)
-
-Each card has a **🤖 Ask GPT** button (and there is an "Ask GPT for all shown"
-button). GPT looks at the image, picks from the class's allowed values and may
-also **propose its own label**. The result only fills the chips — nothing is
-saved until you press Confirm.
-
-**API key handling** — the key is never in the repo:
-- *Deployed app owner*: put `AVALAI_API_KEY` (or `OPENAI_API_KEY`) in the app's
-  **Settings → Secrets** (locally: `.streamlit/secrets.toml`, gitignored).
-  Optional: `AVALAI_BASE_URL`, `GPT_MODEL` (default `gpt-5-mini`). Everyone using
-  the app then gets the buttons without seeing the key. Note this spends your quota.
-- *Otherwise*: each user pastes their own key into the sidebar field
-  (password box, kept only in that browser session, not stored).
 
 The app's progress panel counts only human-reviewed images as "reviewed";
 GPT-labelled-but-unchecked images are shown as a separate number.
