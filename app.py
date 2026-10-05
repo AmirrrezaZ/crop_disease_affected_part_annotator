@@ -775,14 +775,21 @@ def gpt_suggest(path, cls_val, attrs, allowed):
     cfg = gpt_settings()
     if not cfg["key"]:
         raise RuntimeError("No API key configured.")
-    client = OpenAI(api_key=cfg["key"], base_url=cfg["base_url"], timeout=90)
+    # fail fast instead of hanging the UI: short timeouts, no silent SDK retries
+    client = OpenAI(api_key=cfg["key"], base_url=cfg["base_url"], timeout=45, max_retries=1)
+    # send the image bytes ourselves (like the labelling script) rather than a URL the
+    # API host would have to fetch from Supabase -- that fetch is a common cause of hangs
+    import base64
+    import urllib.request
+    with urllib.request.urlopen(image_url(path), timeout=15) as r:
+        b64 = base64.b64encode(r.read()).decode()
     block = "\n".join(f"- {a} ({GLOSSARY[a]}): allowed values: {', '.join(allowed[a])}, none" for a in attrs)
     keys = ", ".join(f'"{a}": ["<value>", ...]' for a in attrs)
     resp = client.responses.create(
         model=cfg["model"], reasoning={"effort": "low"},
         input=[{"role": "user", "content": [
             {"type": "input_text", "text": GPT_PROMPT.format(cls=cls_val, block=block, keys=keys)},
-            {"type": "input_image", "image_url": image_url(path)}]}])
+            {"type": "input_image", "image_url": f"data:image/jpeg;base64,{b64}"}]}])
     m = re.search(r"\{.*\}", resp.output_text or "", re.S)
     if not m:
         raise ValueError("GPT returned no JSON.")
@@ -936,8 +943,28 @@ def attribute_mode(preds):
         flash(f"GPT suggested values for {len(got)} attribute(s) - check them, then Confirm.")
 
     def ask_gpt_all():
+        from concurrent.futures import ThreadPoolExecutor
+        jobs = {}
         for path in st.session_state.attr_paths:
-            ask_gpt(path)
+            cls_val = base.loc[path, "class"]
+            attrs = editable(path)
+            jobs[path] = (cls_val, attrs, {a: (vocab[a] if show_all else per_class[a].get(cls_val, [])
+                                                or vocab[a]) for a in attrs})
+        def one(path):
+            return gpt_suggest(path, *jobs[path][:2], jobs[path][2])
+        ok = fail = 0
+        err = ""
+        with ThreadPoolExecutor(8) as ex:  # parallel, 8 images at a time
+            futs = {p: ex.submit(one, p) for p in jobs}
+        for p, f in futs.items():
+            try:
+                for a, vals in f.result().items():
+                    st.session_state[wkey(a, p)] = vals
+                ok += 1
+            except Exception as e:
+                fail, err = fail + 1, str(e)[:120]
+        flash(f"GPT suggested for {ok} image(s)" + (f"; {fail} failed ({err})" if fail else "")
+              + " - check, then Confirm.")
 
     def confirm_card(path):
         items, undo, empty = collect(path, editable(path))
