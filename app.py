@@ -542,7 +542,7 @@ def review_mode(preds, declared):
     only_unreviewed = st.sidebar.checkbox("Only unreviewed", value=True)
     sort_uncertain_first = st.sidebar.checkbox("Sort most-uncertain first", value=True)
     max_confidence = st.sidebar.slider(
-        "Only show confidence below", min_value=0.05, max_value=1.0, value=1.0, step=0.05,
+        "Only show confidence up to", min_value=0.0, max_value=1.0, value=1.0, step=0.05,
         help="Lower this to restrict the queue to low-confidence predictions only.",
     )
 
@@ -551,7 +551,7 @@ def review_mode(preds, declared):
         reviewed_mask = review.loc[scoped.path, "reviewed"].values
         scoped = scoped[~reviewed_mask]
     if max_confidence < 1.0:
-        scoped = scoped[scoped.confidence.astype(float) < max_confidence]
+        scoped = scoped[scoped.confidence.astype(float) <= max_confidence]
 
     if per_class_n is not None:
         scoped = scoped.assign(_conf=scoped.confidence.astype(float)).sort_values("_conf")
