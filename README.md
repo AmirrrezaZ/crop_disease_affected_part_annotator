@@ -118,7 +118,7 @@ statements for it (otherwise `prepared statement "_pg3_0" does not exist`).
 
 Two modes (sidebar):
 
-- **Class attributes** — the old `class_attributes` table, one disease class per card: pills for color /
+- **Class attributes** — the old `class_attributes` table, one visually coherent group of a disease class per card (a class whose photos differ by organ or look is split into groups, e.g. `grape downy mildew [leaf]` and `[fruit]`): pills for color /
   texture / shape / pattern, **prefilled with proposed labels** (looked at on photos of the class by
   `crop_disease/version4`, vocabulary of `data/class_attributes.csv`), the previous labels underneath, six
   example photos. Fix what is wrong and press **Confirm**, or **Confirm all shown** to take the proposals
