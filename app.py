@@ -1,5 +1,5 @@
-"""Crop disease symptom annotator (affected part + color/texture/shape/pattern,
-with optional GPT assistance). Deployed version of crop_disease/version1: review
+"""Crop disease symptom annotator, two sections: (1) affected part of each photo, (2) symptoms
+(color / texture / shape / pattern: class-level proposals to accept, then per-photo), with optional GPT assistance. Deployed version of crop_disease/version1: review
 and correct the per-image organ predictions from plant_organ's CLIP+MLP
 head (data/organ_predictions.csv), from any device, any time.
 
@@ -1007,30 +1007,47 @@ def class_review_mode():
         st.success("Nothing left in this scope.")
 
 
+DB_DOWN = ("The annotation database is not reachable. Supabase free projects pause after about a week "
+           "without activity: open the Supabase dashboard, restore the project, then reboot this app "
+           "(Manage app → Reboot). Nothing is lost while it is paused.")
+
+
+def affected_part_section(preds, declared):
+    """Tab 1: which organ of the plant each photo shows."""
+    if "review" not in st.session_state:
+        st.session_state.review = load_review_state(preds)
+    mode = st.sidebar.radio("Mode", ["Gallery (browse)", "Review (correct)"])
+    st.sidebar.divider()
+    (gallery_mode if mode.startswith("Gallery") else review_mode)(preds, declared)
+
+
+def symptoms_section(preds):
+    """Tab 2: what the disease looks like (color, texture, shape, pattern). The class-level proposals come
+    first: one card decides a whole class; the per-photo mode is for what the proposals cannot settle."""
+    modes = (["Class labels (proposals)"] if V4_QUEUE.exists() else []) + ["Photos (one by one)"]
+    mode = st.sidebar.radio("Mode", modes)
+    st.sidebar.divider()
+    class_review_mode() if mode.startswith("Class") else attribute_mode(preds)
+
+
 def main():
     if not st.secrets.get("IMAGE_PUBLIC_BASE") or not st.secrets.get("DB_URL"):
         st.error("Missing secrets: set IMAGE_PUBLIC_BASE and DB_URL in this app's Settings → Secrets. "
                  "See README.md for how to get them.")
         st.stop()
 
+    st.caption("Crop disease symptom annotator")
+    section = st.segmented_control("Section", ["1 · Affected part", "2 · Symptoms"],
+                                   default="2 · Symptoms", key="section", label_visibility="collapsed")
     preds = load_predictions()
-    declared = load_declared()
-
-    if "review" not in st.session_state:
-        st.session_state.review = load_review_state(preds)
-    modes = ["Gallery (browse)", "Review (correct)", "Attributes (color, texture, ...)"]
-    if V4_QUEUE.exists():
-        modes.append("Class labels (v4 proposals)")
-    mode = st.sidebar.radio("Mode", modes)
-    st.sidebar.divider()
-    if mode.startswith("Class labels"):
-        class_review_mode()
-    elif mode == "Gallery (browse)":
-        gallery_mode(preds, declared)
-    elif mode.startswith("Attributes"):
-        attribute_mode(preds)
-    else:
-        review_mode(preds, declared)
+    try:
+        if section == "1 · Affected part":
+            affected_part_section(preds, load_declared())
+        else:
+            symptoms_section(preds)
+    except (OperationalError, InterfaceError) as e:  # paused / unreachable database
+        st.error(DB_DOWN)
+        st.caption(f"{type(e).__name__}")
 
 
 if __name__ == "__main__":

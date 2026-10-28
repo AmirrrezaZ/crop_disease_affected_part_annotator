@@ -1,9 +1,12 @@
 # Crop Disease — Symptom Annotator
 
-A small web app for annotating **disease symptoms** in a plant-disease photo
-dataset: the **affected part** (leaf, stem, fruit, flower, root, seed/grain,
-tuber, bulb, or whole plant) and the symptom attributes **color, texture,
-shape and pattern**.
+A small web app for annotating **what a crop disease looks like** in a plant-disease photo
+dataset. It has two sections (top of the page):
+
+| Section | What you label | Status |
+|---|---|---|
+| **1 · Affected part** | which organ the photo shows: leaf, stem, fruit, flower, root, seed/grain, tuber, bulb, whole plant | done |
+| **2 · Symptoms** | the visible symptoms: color, texture, shape, pattern | in progress |
 
 ## 🌐 Live Web App
 
@@ -11,7 +14,9 @@ The annotator is available online and can be used directly from a browser:
 
 **https://disease-annotator.streamlit.app/**
 
-No local installation is required to use the deployed application.
+No local installation is required to use the deployed application. If the page shows
+"The annotation database is not reachable", the Supabase project is paused (free projects
+pause after about a week without use): restore it in the Supabase dashboard and reboot the app.
 
 ## Why this exists
 
@@ -108,6 +113,20 @@ DB_URL=... python scripts/export_annotations.py --all                         # 
 
 Use the transaction-pooler `DB_URL`; the app disables psycopg3 prepared
 statements for it (otherwise `prepared statement "_pg3_0" does not exist`).
+
+## Section 2 · Symptoms
+
+Two modes (sidebar):
+
+- **Class labels (proposals)** — the quick path. The symptom labels of a disease are class-level
+  (what the disease usually looks like) and are noisy. A revision pass (hand labels + a probe trained on
+  other classes, `crop_disease/version4`) produced **one card per disease class and symptom** with the net
+  change (e.g. `pattern: coalescing_blotches → none`), the evidence and 6 example photos. Press
+  **Accept** or **Keep original**; **Accept all** takes every strong proposal still open (they apply by
+  default anyway). Decisions are stored in `class_review_decision` (created on first use) and exported by
+  `scripts/export_annotations.py`; `version4/src/apply_review.py` turns them into the final labels.
+  The cards live in `data/v4_review_queue.csv`.
+- **Photos (one by one)** — per-image attributes, described below, for what the proposals cannot settle.
 
 ## Symptom attributes (color, texture, shape, pattern)
 
