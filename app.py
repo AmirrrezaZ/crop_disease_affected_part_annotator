@@ -953,14 +953,17 @@ def class_review_mode():
     heads = st.sidebar.multiselect("Symptom", ["shape", "texture", "pattern"],
                                    default=["shape", "texture", "pattern"], format_func=str.title)
     only_open = st.sidebar.checkbox("Only undecided", value=True)
+    only_unsure = st.sidebar.checkbox("Only the ones I marked unsure", value=False)
     n = st.sidebar.slider("Cards per page", 1, 20, 6)
     scope = queue[queue.strength.isin(strengths) & queue["head"].isin(heads)]
     scope = scope.assign(_o=scope.strength.map({"strong": 0, "hand_only": 1, "model_only": 2}),
                          _s=scope["sort"].astype(int)).sort_values(["_o", "disease_name", "_s"])
     open_ = scope[~scope.item_id.isin(dec)]
     done = len(scope) - len(open_)
-    st.progress(done / max(len(scope), 1), text=f"{done} / {len(scope)} decided")
-    st.caption("Undecided strong proposals are applied by default; undecided weaker ones are not.")
+    unsure = int(sum(dec.get(i) == "unsure" for i in scope.item_id))
+    st.progress(done / max(len(scope), 1), text=f"{done} / {len(scope)} decided · {unsure} unsure")
+    st.caption("Undecided strong proposals are applied by default; undecided weaker ones are not. "
+               "'Unsure' sends the card to be settled for you (from a larger photo sample).")
 
     def put(items, decision):
         at = datetime.now(timezone.utc)
@@ -986,7 +989,7 @@ def class_review_mode():
     b2.button(f"↩ Undo ({len(st.session_state.v4_undo)})", on_click=undo,
               disabled=not st.session_state.v4_undo, use_container_width=True)
 
-    view = open_ if only_open else scope
+    view = scope[scope.item_id.map(dec) == "unsure"] if only_unsure else (open_ if only_open else scope)
     for _, r in view.head(n).iterrows():
         with st.container(border=True):
             st.markdown(f"**{r.disease_name}** ({r.cls.split('|')[0]}) · {r['head']}: {r.value.replace('_', ' ')}")
@@ -998,9 +1001,11 @@ def class_review_mode():
             for k, p in enumerate(imgs[:6]):
                 cols[k % 3].image(image_url(p), use_container_width=True)
             cur = dec.get(r.item_id)
-            a, k_ = st.columns(2)
+            a, u, k_ = st.columns(3)
             a.button("✅ Accept" + (" ✓" if cur == "accept" else ""), key=f"v4a_{r.item_id}",
                      on_click=put, args=([r.item_id], "accept"), use_container_width=True)
+            u.button("❓ Unsure" + (" ✓" if cur == "unsure" else ""), key=f"v4u_{r.item_id}",
+                     on_click=put, args=([r.item_id], "unsure"), use_container_width=True)
             k_.button("❌ Keep original" + (" ✓" if cur == "reject" else ""), key=f"v4r_{r.item_id}",
                       on_click=put, args=([r.item_id], "reject"), use_container_width=True)
     if view.empty:

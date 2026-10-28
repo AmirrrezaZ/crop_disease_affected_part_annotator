@@ -122,7 +122,7 @@ Two modes (sidebar):
   (what the disease usually looks like) and are noisy. A revision pass (hand labels + a probe trained on
   other classes, `crop_disease/version4`) produced **one card per disease class and symptom** with the net
   change (e.g. `pattern: coalescing_blotches → none`), the evidence and 6 example photos. Press
-  **Accept** or **Keep original**; **Accept all** takes every strong proposal still open (they apply by
+  **Accept**, **Keep original** or **Unsure** (unsure cards are settled for you afterwards from a larger photo sample); **Accept all** takes every strong proposal still open (they apply by
   default anyway). Decisions are stored in `class_review_decision` (created on first use) and exported by
   `scripts/export_annotations.py`; `version4/src/apply_review.py` turns them into the final labels.
   The cards live in `data/v4_review_queue.csv`.
