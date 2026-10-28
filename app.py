@@ -947,8 +947,9 @@ def option_guide():
     with st.sidebar.expander("Visual key: what each option looks like", expanded=True):
         tabs = st.tabs(["Color", "Texture", "Shape", "Pattern", "Size", "Density"])
         for tab, k in zip(tabs, ["color", "texture", "shape", "pattern", "size", "density"]):
-            cells = "".join(f'<div style="font:12px sans-serif;text-align:center">{svg}<div>{name.replace("_", " ")}</div></div>' for name, svg in g[k].items())
-            tab.html(f'<div style="display:grid;grid-template-columns:repeat(2,1fr);gap:8px">{cells}</div>')
+            cols = tab.columns(2)
+            for i, (name, svg) in enumerate(g[k].items()):   # st.html strips SVG; st.image renders an SVG string as a picture
+                cols[i % 2].image(svg, caption=name.replace("_", " "), use_container_width=True)
 
 
 def class_attribute_mode():
