@@ -118,14 +118,14 @@ statements for it (otherwise `prepared statement "_pg3_0" does not exist`).
 
 Two modes (sidebar):
 
-- **Class labels (proposals)** — the quick path. The symptom labels of a disease are class-level
-  (what the disease usually looks like) and are noisy. A revision pass (hand labels + a probe trained on
-  other classes, `crop_disease/version4`) produced **one card per disease class and symptom** with the net
-  change (e.g. `pattern: coalescing_blotches → none`), the evidence and 6 example photos. Press
-  **Accept**, **Keep original** or **Unsure** (unsure cards are settled for you afterwards from a larger photo sample); **Accept all** takes every strong proposal still open (they apply by
-  default anyway). Decisions are stored in `class_review_decision` (created on first use) and exported by
-  `scripts/export_annotations.py`; `version4/src/apply_review.py` turns them into the final labels.
-  The cards live in `data/v4_review_queue.csv`.
+- **Class attributes** — the old `class_attributes` table, one disease class per card: pills for color /
+  texture / shape / pattern, **prefilled with proposed labels** (looked at on photos of the class by
+  `crop_disease/version4`, vocabulary of `data/class_attributes.csv`), the previous labels underneath, six
+  example photos. Fix what is wrong and press **Confirm**, or **Confirm all shown** to take the proposals
+  as they are; **Unsure** sends a class back to be settled from a larger photo sample. Decisions are stored in
+  `class_attribute_review` (created on first use) and exported by `scripts/export_annotations.py`;
+  `version4/src/apply_class_attributes.py` writes them to the image-level dataset. The cards live in
+  `data/v4_class_queue.csv` (classes whose photos are not uploaded show without images).
 - **Photos (one by one)** — per-image attributes, described below, for what the proposals cannot settle.
 
 ## Symptom attributes (color, texture, shape, pattern)

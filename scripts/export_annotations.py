@@ -49,10 +49,10 @@ def main():
     attrs.to_csv(out / "attribute_review.csv", index=False)
     wide = attrs.pivot(index=["path", "class"], columns="attribute", values="value").reset_index()
     wide.to_csv(out / "attribute_review_wide.csv", index=False)
-    try:  # decisions of the "Class labels (v4 proposals)" mode; the table exists once that mode was used
-        pd.read_sql("SELECT * FROM class_review_decision ORDER BY item_id", engine).to_csv(out / "class_review_decision.csv", index=False)
+    try:  # the "Class attributes" mode (section 2); the table exists once that mode was used
+        pd.read_sql("SELECT * FROM class_attribute_review ORDER BY class", engine).to_csv(out / "class_attribute_review.csv", index=False)
     except Exception as e:
-        print("class_review_decision not exported:", type(e).__name__)
+        print("class_attribute_review not exported:", type(e).__name__)
     print(f"organ_review: {len(organ):,} rows, attribute_review: {len(attrs):,} rows -> {out}/")
 
 

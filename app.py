@@ -924,90 +924,96 @@ def attribute_mode(preds):
     grid()
 
 
-# ------------------------------------------------- class-label review (version 4)
-V4_QUEUE = DATA / "v4_review_queue.csv"   # built by crop_disease/version4/src/export_review_queue.py
-V4_TABLE = """CREATE TABLE IF NOT EXISTS class_review_decision (
-    item_id text PRIMARY KEY, decision text NOT NULL, decided_at timestamptz)"""
-V4_UPSERT = """INSERT INTO class_review_decision (item_id, decision, decided_at)
-    VALUES (:item_id, :decision, :at)
-    ON CONFLICT (item_id) DO UPDATE SET decision = EXCLUDED.decision, decided_at = EXCLUDED.decided_at"""
-V4_STRENGTH = {"strong": "Strong (hand labels + probe agree)", "hand_only": "Hand labels only",
-               "model_only": "Probe only (weak)"}
+# ------------------------------------------------- class attributes (version 4)
+V4_QUEUE = DATA / "v4_class_queue.csv"   # built by crop_disease/version4/src/export_class_queue.py
+V4_ATTRS = ["color", "texture", "shape", "pattern"]
+V4_TABLE = """CREATE TABLE IF NOT EXISTS class_attribute_review (
+    class text PRIMARY KEY, color text, texture text, shape text, pattern text, status text, decided_at timestamptz)"""
+V4_UPSERT = """INSERT INTO class_attribute_review (class, color, texture, shape, pattern, status, decided_at)
+    VALUES (:cls, :color, :texture, :shape, :pattern, :status, :at)
+    ON CONFLICT (class) DO UPDATE SET color = EXCLUDED.color, texture = EXCLUDED.texture, shape = EXCLUDED.shape,
+        pattern = EXCLUDED.pattern, status = EXCLUDED.status, decided_at = EXCLUDED.decided_at"""
 
 
-def class_review_mode():
-    """One proposal per card: the net change of one symptom (shape / texture / pattern) for a whole
-    disease class, with the evidence and example photos. Accept or keep the original; 'Accept all' takes every strong
-    proposal still undecided. Decisions land in class_review_decision (created on first use)."""
+def class_attribute_mode():
+    """The old class_attributes table, one disease class per card: pills for color / texture / shape / pattern
+    prefilled with the proposed labels (read from the class's photos), the previous labels underneath. Fix what is
+    wrong and press Confirm; 'Confirm all shown' saves the proposals as they are. Status 'unsure' sends the class
+    back to be settled from a larger photo sample. Decisions go to class_attribute_review (created on first use)."""
     queue = pd.read_csv(V4_QUEUE, dtype=str).fillna("")
-    if "v4_dec" not in st.session_state:
+    vocab = {a: sorted({v for x in queue[a] for v in x.split(";") if v} | {v for x in queue["prev_" + a] for v in x.split(";") if v}) for a in V4_ATTRS}
+    if "v4_cls" not in st.session_state:
         run_write(V4_TABLE, {})
-        d = get_conn().query("SELECT item_id, decision FROM class_review_decision", ttl=0)
-        st.session_state.v4_dec = dict(zip(d["item_id"], d["decision"]))
+        d = get_conn().query("SELECT * FROM class_attribute_review", ttl=0)
+        st.session_state.v4_cls = {r["class"]: r for r in d.to_dict("records")}
         st.session_state.v4_undo = []
-    dec = st.session_state.v4_dec
+    done = st.session_state.v4_cls
 
-    st.sidebar.header("Class labels")
-    strengths = st.sidebar.multiselect("Evidence", list(V4_STRENGTH), default=["strong", "hand_only"],
-                                       format_func=V4_STRENGTH.get)
-    heads = st.sidebar.multiselect("Symptom", ["shape", "texture", "pattern"],
-                                   default=["shape", "texture", "pattern"], format_func=str.title)
+    st.title("Class attributes")
+    st.sidebar.header("Classes")
+    stat = st.sidebar.multiselect("Show", ["reviewed", "reviewed_empty", "unreviewed"], default=["reviewed"],
+                                  format_func=lambda x: {"reviewed": "proposed by Claude", "reviewed_empty": "no symptoms proposed (pests ...)",
+                                                         "unreviewed": "not looked at yet"}[x])
+    with_photos = st.sidebar.checkbox("Only classes with photos here", value=True)
     only_open = st.sidebar.checkbox("Only undecided", value=True)
     only_unsure = st.sidebar.checkbox("Only the ones I marked unsure", value=False)
-    n = st.sidebar.slider("Cards per page", 1, 20, 6)
-    scope = queue[queue.strength.isin(strengths) & queue["head"].isin(heads)]
-    scope = scope.assign(_o=scope.strength.map({"strong": 0, "hand_only": 1, "model_only": 2}),
-                         _s=scope["sort"].astype(int)).sort_values(["_o", "disease_name", "_s"])
-    open_ = scope[~scope.item_id.isin(dec)]
-    done = len(scope) - len(open_)
-    unsure = int(sum(dec.get(i) == "unsure" for i in scope.item_id))
-    st.progress(done / max(len(scope), 1), text=f"{done} / {len(scope)} decided · {unsure} unsure")
-    st.caption("Undecided strong proposals are applied by default; undecided weaker ones are not. "
-               "'Unsure' sends the card to be settled for you (from a larger photo sample).")
+    n = st.sidebar.slider("Cards per page", 1, 12, 4)
+    scope = queue[queue.status.isin(stat)]
+    if with_photos:
+        scope = scope[scope.no_photos == "0"]
+    scope = scope.assign(_n=scope.n_photos.astype(int)).sort_values("_n", ascending=False)
+    is_done = scope.cls.map(lambda c: c in done and done[c]["status"] != "unsure")
+    unsure = int(sum(done.get(c, {}).get("status") == "unsure" for c in scope.cls))
+    st.progress(int(is_done.sum()) / max(len(scope), 1), text=f"{int(is_done.sum())} / {len(scope)} classes decided · {unsure} unsure")
+    view = scope[scope.cls.map(lambda c: done.get(c, {}).get("status") == "unsure")] if only_unsure else (scope[~is_done] if only_open else scope)
 
-    def put(items, decision):
+    def save(items, status):
         at = datetime.now(timezone.utc)
-        run_write(V4_UPSERT, [{"item_id": i, "decision": decision, "at": at} for i in items])
-        st.session_state.v4_undo.append([(i, dec.get(i)) for i in items])
+        run_write(V4_UPSERT, [{**i, "status": status, "at": at} for i in items])
+        st.session_state.v4_undo.append([(i["cls"], done.get(i["cls"])) for i in items])
         for i in items:
-            dec[i] = decision
+            done[i["cls"]] = {**i, "status": status}
 
     def undo():
-        for i, old in st.session_state.v4_undo.pop():
+        for c, old in st.session_state.v4_undo.pop():
             if old is None:
-                run_write("DELETE FROM class_review_decision WHERE item_id = :i", {"i": i})
-                dec.pop(i, None)
+                run_write("DELETE FROM class_attribute_review WHERE class = :c", {"c": c}); done.pop(c, None)
             else:
-                run_write(V4_UPSERT, {"item_id": i, "decision": old, "at": datetime.now(timezone.utc)})
-                dec[i] = old
+                run_write(V4_UPSERT, {**old, "cls": c, "at": datetime.now(timezone.utc)}); done[c] = old
 
-    strong_open = open_[open_.strength == "strong"].item_id.tolist()
+    def current(c, r):
+        return {a: join_attr(st.session_state.get(f"v4p_{c}_{a}", split_attr(r[a])), vocab[a]) for a in V4_ATTRS}
+
+    shown = view.head(n)
     b1, b2 = st.columns([3, 2])
-    b1.button(f"✓ Accept all {len(strong_open)} strong proposals still open", type="primary",
-              disabled=not strong_open, on_click=put, args=(strong_open, "accept"),
-              use_container_width=True)
-    b2.button(f"↩ Undo ({len(st.session_state.v4_undo)})", on_click=undo,
-              disabled=not st.session_state.v4_undo, use_container_width=True)
-
-    view = scope[scope.item_id.map(dec) == "unsure"] if only_unsure else (open_ if only_open else scope)
-    for _, r in view.head(n).iterrows():
+    b1.button(f"✓ Confirm all {len(shown)} shown", type="primary", disabled=shown.empty, use_container_width=True,
+              on_click=lambda: save([{"cls": r.cls, **current(r.cls, r)} for _, r in shown.iterrows()], "confirmed"))
+    b2.button(f"↩ Undo ({len(st.session_state.v4_undo)})", on_click=undo, disabled=not st.session_state.v4_undo, use_container_width=True)
+    for _, r in shown.iterrows():
         with st.container(border=True):
-            st.markdown(f"**{r.disease_name}** ({r.cls.split('|')[0]}) · {r['head']}: {r.value.replace('_', ' ')}")
-            st.caption(f"class label now: {fmt_attr(r.current)}  →  proposed: {fmt_attr(r.proposed)}"
-                       f"  ·  {r.n_images} photos in the class")
-            st.caption(r.evidence)
+            cur = done.get(r.cls)
+            st.markdown(f"**{r.cls}** · {r.disease_type} · parts: {r.affected_part or '—'} · {r.n_photos} photos"
+                        + (f"  ·  _{cur['status']}_" if cur else ""))
             imgs = [p for p in r.images.split(";") if p]
-            cols = st.columns(3)
-            for k, p in enumerate(imgs[:6]):
-                cols[k % 3].image(image_url(p), use_container_width=True)
-            cur = dec.get(r.item_id)
-            a, u, k_ = st.columns(3)
-            a.button("✅ Accept" + (" ✓" if cur == "accept" else ""), key=f"v4a_{r.item_id}",
-                     on_click=put, args=([r.item_id], "accept"), use_container_width=True)
-            u.button("❓ Unsure" + (" ✓" if cur == "unsure" else ""), key=f"v4u_{r.item_id}",
-                     on_click=put, args=([r.item_id], "unsure"), use_container_width=True)
-            k_.button("❌ Keep original" + (" ✓" if cur == "reject" else ""), key=f"v4r_{r.item_id}",
-                      on_click=put, args=([r.item_id], "reject"), use_container_width=True)
+            if imgs:
+                cols = st.columns(3)
+                for k, p in enumerate(imgs[:6]):
+                    cols[k % 3].image(image_url(p), use_container_width=True)
+            else:
+                st.caption("No photo of this class is uploaded to the image store.")
+            if r.measured:
+                st.caption(f"colour measured on the lesions: {r.measured}")
+            for a in V4_ATTRS:
+                saved = split_attr(cur[a]) if cur else split_attr(r[a])
+                kw = {} if f"v4p_{r.cls}_{a}" in st.session_state else {"default": [v for v in saved if v in vocab[a]]}
+                st.pills(a.title(), vocab[a], selection_mode="multi", format_func=fmt_attr, key=f"v4p_{r.cls}_{a}", **kw)
+                if r["prev_" + a] != r[a]:
+                    st.caption(f"before: {fmt_attr(r['prev_' + a]) if r['prev_' + a] else '—'}")
+            c1, c2 = st.columns(2)
+            c1.button("✓ Confirm", key=f"v4c_{r.cls}", use_container_width=True,
+                      on_click=lambda r=r: save([{"cls": r.cls, **current(r.cls, r)}], "confirmed"))
+            c2.button("❓ Unsure", key=f"v4u_{r.cls}", use_container_width=True,
+                      on_click=lambda r=r: save([{"cls": r.cls, **current(r.cls, r)}], "unsure"))
     if view.empty:
         st.success("Nothing left in this scope.")
 
@@ -1029,10 +1035,10 @@ def affected_part_section(preds, declared):
 def symptoms_section(preds):
     """Tab 2: what the disease looks like (color, texture, shape, pattern). The class-level proposals come
     first: one card decides a whole class; the per-photo mode is for what the proposals cannot settle."""
-    modes = (["Class labels (proposals)"] if V4_QUEUE.exists() else []) + ["Photos (one by one)"]
+    modes = (["Class attributes"] if V4_QUEUE.exists() else []) + ["Photos (one by one)"]
     mode = st.sidebar.radio("Mode", modes)
     st.sidebar.divider()
-    class_review_mode() if mode.startswith("Class") else attribute_mode(preds)
+    class_attribute_mode() if mode.startswith("Class") else attribute_mode(preds)
 
 
 def main():
