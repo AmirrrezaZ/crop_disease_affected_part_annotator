@@ -25,6 +25,7 @@ Run locally against the same DB/bucket for testing:
 Deployed: pushed to GitHub, connected at share.streamlit.io, with
 IMAGE_PUBLIC_BASE and DB_URL set in that app's Secrets. See README.md.
 """
+import json
 import time
 from datetime import datetime, timezone
 from pathlib import Path
@@ -935,6 +936,21 @@ V4_UPSERT = """INSERT INTO group_attribute_review (class, color, texture, shape,
         pattern = EXCLUDED.pattern, lesion_size = EXCLUDED.lesion_size, lesion_density = EXCLUDED.lesion_density, status = EXCLUDED.status, decided_at = EXCLUDED.decided_at"""
 
 
+GUIDE = DATA / "option_guide.json"   # schematic drawing of every option (from lesion_attribute_visual_key.html)
+
+
+def option_guide():
+    """Sidebar: what each pill means, as a small drawing on a leaf, one tab per attribute."""
+    if not GUIDE.exists():
+        return
+    g = json.loads(GUIDE.read_text())
+    with st.sidebar.expander("Visual key: what each option looks like", expanded=True):
+        tabs = st.tabs(["Color", "Texture", "Shape", "Pattern", "Size", "Density"])
+        for tab, k in zip(tabs, ["color", "texture", "shape", "pattern", "size", "density"]):
+            cells = "".join(f'<div style="font:12px sans-serif;text-align:center">{svg}<div>{name.replace("_", " ")}</div></div>' for name, svg in g[k].items())
+            tab.html(f'<div style="display:grid;grid-template-columns:repeat(2,1fr);gap:8px">{cells}</div>')
+
+
 def class_attribute_mode():
     """The old class_attributes table, one disease class per card: pills for color / texture / shape / pattern
     prefilled with the proposed labels (read from the class's photos), the previous labels underneath. Fix what is
@@ -950,6 +966,7 @@ def class_attribute_mode():
     done = st.session_state.v4_cls
 
     st.title("Class attributes")
+    option_guide()
     st.sidebar.header("Classes")
     stat = st.sidebar.multiselect("Show", ["reviewed", "reviewed_empty", "unreviewed"], default=["reviewed"],
                                   format_func=lambda x: {"reviewed": "proposed by Claude", "reviewed_empty": "no symptoms proposed (pests ...)",
