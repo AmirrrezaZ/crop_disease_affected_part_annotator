@@ -924,6 +924,89 @@ def attribute_mode(preds):
     grid()
 
 
+# ------------------------------------------------- class-label review (version 4)
+V4_QUEUE = DATA / "v4_review_queue.csv"   # built by crop_disease/version4/src/export_review_queue.py
+V4_TABLE = """CREATE TABLE IF NOT EXISTS class_review_decision (
+    item_id text PRIMARY KEY, decision text NOT NULL, decided_at timestamptz)"""
+V4_UPSERT = """INSERT INTO class_review_decision (item_id, decision, decided_at)
+    VALUES (:item_id, :decision, :at)
+    ON CONFLICT (item_id) DO UPDATE SET decision = EXCLUDED.decision, decided_at = EXCLUDED.decided_at"""
+V4_STRENGTH = {"strong": "Strong (hand labels + probe agree)", "hand_only": "Hand labels only",
+               "model_only": "Probe only (weak)"}
+
+
+def class_review_mode():
+    """One proposal per card: the net change of one symptom (shape / texture / pattern) for a whole
+    disease class, with the evidence and example photos. Accept or keep the original; 'Accept all' takes every strong
+    proposal still undecided. Decisions land in class_review_decision (created on first use)."""
+    queue = pd.read_csv(V4_QUEUE, dtype=str).fillna("")
+    if "v4_dec" not in st.session_state:
+        run_write(V4_TABLE, {})
+        d = get_conn().query("SELECT item_id, decision FROM class_review_decision", ttl=0)
+        st.session_state.v4_dec = dict(zip(d["item_id"], d["decision"]))
+        st.session_state.v4_undo = []
+    dec = st.session_state.v4_dec
+
+    st.sidebar.header("Class labels")
+    strengths = st.sidebar.multiselect("Evidence", list(V4_STRENGTH), default=["strong", "hand_only"],
+                                       format_func=V4_STRENGTH.get)
+    heads = st.sidebar.multiselect("Symptom", ["shape", "texture", "pattern"],
+                                   default=["shape", "texture", "pattern"], format_func=str.title)
+    only_open = st.sidebar.checkbox("Only undecided", value=True)
+    n = st.sidebar.slider("Cards per page", 1, 20, 6)
+    scope = queue[queue.strength.isin(strengths) & queue["head"].isin(heads)]
+    scope = scope.assign(_o=scope.strength.map({"strong": 0, "hand_only": 1, "model_only": 2}),
+                         _s=scope["sort"].astype(int)).sort_values(["_o", "disease_name", "_s"])
+    open_ = scope[~scope.item_id.isin(dec)]
+    done = len(scope) - len(open_)
+    st.progress(done / max(len(scope), 1), text=f"{done} / {len(scope)} decided")
+    st.caption("Undecided strong proposals are applied by default; undecided weaker ones are not.")
+
+    def put(items, decision):
+        at = datetime.now(timezone.utc)
+        run_write(V4_UPSERT, [{"item_id": i, "decision": decision, "at": at} for i in items])
+        st.session_state.v4_undo.append([(i, dec.get(i)) for i in items])
+        for i in items:
+            dec[i] = decision
+
+    def undo():
+        for i, old in st.session_state.v4_undo.pop():
+            if old is None:
+                run_write("DELETE FROM class_review_decision WHERE item_id = :i", {"i": i})
+                dec.pop(i, None)
+            else:
+                run_write(V4_UPSERT, {"item_id": i, "decision": old, "at": datetime.now(timezone.utc)})
+                dec[i] = old
+
+    strong_open = open_[open_.strength == "strong"].item_id.tolist()
+    b1, b2 = st.columns([3, 2])
+    b1.button(f"✓ Accept all {len(strong_open)} strong proposals still open", type="primary",
+              disabled=not strong_open, on_click=put, args=(strong_open, "accept"),
+              use_container_width=True)
+    b2.button(f"↩ Undo ({len(st.session_state.v4_undo)})", on_click=undo,
+              disabled=not st.session_state.v4_undo, use_container_width=True)
+
+    view = open_ if only_open else scope
+    for _, r in view.head(n).iterrows():
+        with st.container(border=True):
+            st.markdown(f"**{r.disease_name}** ({r.cls.split('|')[0]}) · {r['head']}: {r.value.replace('_', ' ')}")
+            st.caption(f"class label now: {fmt_attr(r.current)}  →  proposed: {fmt_attr(r.proposed)}"
+                       f"  ·  {r.n_images} photos in the class")
+            st.caption(r.evidence)
+            imgs = [p for p in r.images.split(";") if p]
+            cols = st.columns(3)
+            for k, p in enumerate(imgs[:6]):
+                cols[k % 3].image(image_url(p), use_container_width=True)
+            cur = dec.get(r.item_id)
+            a, k_ = st.columns(2)
+            a.button("✅ Accept" + (" ✓" if cur == "accept" else ""), key=f"v4a_{r.item_id}",
+                     on_click=put, args=([r.item_id], "accept"), use_container_width=True)
+            k_.button("❌ Keep original" + (" ✓" if cur == "reject" else ""), key=f"v4r_{r.item_id}",
+                      on_click=put, args=([r.item_id], "reject"), use_container_width=True)
+    if view.empty:
+        st.success("Nothing left in this scope.")
+
+
 def main():
     if not st.secrets.get("IMAGE_PUBLIC_BASE") or not st.secrets.get("DB_URL"):
         st.error("Missing secrets: set IMAGE_PUBLIC_BASE and DB_URL in this app's Settings → Secrets. "
@@ -935,10 +1018,14 @@ def main():
 
     if "review" not in st.session_state:
         st.session_state.review = load_review_state(preds)
-    mode = st.sidebar.radio("Mode", ["Gallery (browse)", "Review (correct)",
-                                     "Attributes (color, texture, ...)"])
+    modes = ["Gallery (browse)", "Review (correct)", "Attributes (color, texture, ...)"]
+    if V4_QUEUE.exists():
+        modes.append("Class labels (v4 proposals)")
+    mode = st.sidebar.radio("Mode", modes)
     st.sidebar.divider()
-    if mode == "Gallery (browse)":
+    if mode.startswith("Class labels"):
+        class_review_mode()
+    elif mode == "Gallery (browse)":
         gallery_mode(preds, declared)
     elif mode.startswith("Attributes"):
         attribute_mode(preds)
