@@ -926,25 +926,25 @@ def attribute_mode(preds):
 
 # ------------------------------------------------- class attributes (version 4)
 V4_QUEUE = DATA / "v4_class_queue.csv"   # built by crop_disease/version4/src/export_class_queue.py
-V4_ATTRS = ["color", "texture", "shape", "pattern"]
-V4_TABLE = """CREATE TABLE IF NOT EXISTS class_attribute_review (
-    class text PRIMARY KEY, color text, texture text, shape text, pattern text, status text, decided_at timestamptz)"""
-V4_UPSERT = """INSERT INTO class_attribute_review (class, color, texture, shape, pattern, status, decided_at)
-    VALUES (:cls, :color, :texture, :shape, :pattern, :status, :at)
+V4_ATTRS = ["color", "texture", "shape", "pattern", "lesion_size", "lesion_density"]
+V4_TABLE = """CREATE TABLE IF NOT EXISTS group_attribute_review (
+    class text PRIMARY KEY, color text, texture text, shape text, pattern text, lesion_size text, lesion_density text, status text, decided_at timestamptz)"""
+V4_UPSERT = """INSERT INTO group_attribute_review (class, color, texture, shape, pattern, lesion_size, lesion_density, status, decided_at)
+    VALUES (:cls, :color, :texture, :shape, :pattern, :lesion_size, :lesion_density, :status, :at)
     ON CONFLICT (class) DO UPDATE SET color = EXCLUDED.color, texture = EXCLUDED.texture, shape = EXCLUDED.shape,
-        pattern = EXCLUDED.pattern, status = EXCLUDED.status, decided_at = EXCLUDED.decided_at"""
+        pattern = EXCLUDED.pattern, lesion_size = EXCLUDED.lesion_size, lesion_density = EXCLUDED.lesion_density, status = EXCLUDED.status, decided_at = EXCLUDED.decided_at"""
 
 
 def class_attribute_mode():
     """The old class_attributes table, one disease class per card: pills for color / texture / shape / pattern
     prefilled with the proposed labels (read from the class's photos), the previous labels underneath. Fix what is
     wrong and press Confirm; 'Confirm all shown' saves the proposals as they are. Status 'unsure' sends the class
-    back to be settled from a larger photo sample. Decisions go to class_attribute_review (created on first use)."""
+    back to be settled from a larger photo sample. Decisions go to group_attribute_review (created on first use)."""
     queue = pd.read_csv(V4_QUEUE, dtype=str).fillna("")
     vocab = {a: sorted({v for x in queue[a] for v in x.split(";") if v} | {v for x in queue["prev_" + a] for v in x.split(";") if v}) for a in V4_ATTRS}
     if "v4_cls" not in st.session_state:
         run_write(V4_TABLE, {})
-        d = get_conn().query("SELECT * FROM class_attribute_review", ttl=0)
+        d = get_conn().query("SELECT * FROM group_attribute_review", ttl=0)
         st.session_state.v4_cls = {r["class"]: r for r in d.to_dict("records")}
         st.session_state.v4_undo = []
     done = st.session_state.v4_cls
@@ -977,7 +977,7 @@ def class_attribute_mode():
     def undo():
         for c, old in st.session_state.v4_undo.pop():
             if old is None:
-                run_write("DELETE FROM class_attribute_review WHERE class = :c", {"c": c}); done.pop(c, None)
+                run_write("DELETE FROM group_attribute_review WHERE class = :c", {"c": c}); done.pop(c, None)
             else:
                 run_write(V4_UPSERT, {**old, "cls": c, "at": datetime.now(timezone.utc)}); done[c] = old
 
@@ -1001,12 +1001,14 @@ def class_attribute_mode():
                     cols[k % 3].image(image_url(p), use_container_width=True)
             else:
                 st.caption("No photo of this class is uploaded to the image store.")
+            if r.note:
+                st.warning(r.note)
             if r.measured:
                 st.caption(f"colour measured on the lesions: {r.measured}")
             for a in V4_ATTRS:
                 saved = split_attr(cur[a]) if cur else split_attr(r[a])
                 kw = {} if f"v4p_{r.cls}_{a}" in st.session_state else {"default": [v for v in saved if v in vocab[a]]}
-                st.pills(a.title(), vocab[a], selection_mode="multi", format_func=fmt_attr, key=f"v4p_{r.cls}_{a}", **kw)
+                st.pills(a.replace("_", " ").title(), vocab[a], selection_mode="multi", format_func=fmt_attr, key=f"v4p_{r.cls}_{a}", **kw)
                 if r["prev_" + a] != r[a]:
                     st.caption(f"before: {fmt_attr(r['prev_' + a]) if r['prev_' + a] else '—'}")
             c1, c2 = st.columns(2)

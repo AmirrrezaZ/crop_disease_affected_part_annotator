@@ -123,7 +123,7 @@ Two modes (sidebar):
   `crop_disease/version4`, vocabulary of `data/class_attributes.csv`), the previous labels underneath, six
   example photos. Fix what is wrong and press **Confirm**, or **Confirm all shown** to take the proposals
   as they are; **Unsure** sends a class back to be settled from a larger photo sample. Decisions are stored in
-  `class_attribute_review` (created on first use) and exported by `scripts/export_annotations.py`;
+  `group_attribute_review` (created on first use; the first round is in `class_attribute_review`) and exported by `scripts/export_annotations.py`;
   `version4/src/apply_class_attributes.py` writes them to the image-level dataset. The cards live in
   `data/v4_class_queue.csv` (classes whose photos are not uploaded show without images).
 - **Photos (one by one)** — per-image attributes, described below, for what the proposals cannot settle.

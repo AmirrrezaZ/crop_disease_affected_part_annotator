@@ -49,6 +49,10 @@ def main():
     attrs.to_csv(out / "attribute_review.csv", index=False)
     wide = attrs.pivot(index=["path", "class"], columns="attribute", values="value").reset_index()
     wide.to_csv(out / "attribute_review_wide.csv", index=False)
+    try:  # the second round on the group cards (adds lesion size / density)
+        pd.read_sql("SELECT * FROM group_attribute_review ORDER BY class", engine).to_csv(out / "group_attribute_review.csv", index=False)
+    except Exception as e:
+        print("group_attribute_review not exported:", type(e).__name__)
     try:  # the "Class attributes" mode (section 2); the table exists once that mode was used
         pd.read_sql("SELECT * FROM class_attribute_review ORDER BY class", engine).to_csv(out / "class_attribute_review.csv", index=False)
     except Exception as e:
